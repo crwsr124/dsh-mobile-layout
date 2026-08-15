@@ -1,0 +1,28 @@
+{
+  "name": "dsh-mobile-layout",
+  "description": "dsh web 移动端阅读布局优化：窄视口(<1024px)侧栏抽屉化 + Markdown 表格/长词自适应换行（纯客户端插件，零依赖）",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js"
+  ],
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [],
+      "immediately": true
+    }
+  },
+  "license": "MIT"
+}
