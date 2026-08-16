@@ -187,6 +187,6 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
   到 `refs/heads/main`——空仓库首次建分支需完整 refspec）。
 - **subtree split 只取已提交内容**：改完必须先 `git commit` 再跑脚本。
 - GitHub 图片经 camo 代理**按 URL 永久缓存**：改图必须给 img src 加版本
-  查询参数（`docs/banner.png?v=N`）。
+  查询参数（`docs/banner-*.gif?v=N`）。
 - npm 未发布（装命令为 `dsh plugin add github:crwsr124/dsh-mobile-layout`）；
   发布 npm 后可缩短为包名。
