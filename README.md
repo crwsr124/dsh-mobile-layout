@@ -22,21 +22,22 @@ host 半注册一个只读文件 HTTP 路由；client 半注入响应式 CSS 与
 
 桌面端（≥1024px）行为完全不变。
 
-### 2. 换肤（🎨 浮动按钮，右下角）
+### 2. 换肤（侧边栏「主题与背景」按钮）
 
 参考社区换肤插件设计（[dsh-skin](https://github.com/KinGao294/dsh-skin) /
 [dsh-theme-plugin](https://github.com/BeiZi6/dsh-theme-plugin) /
 [dsh-dream-skin](https://github.com/RevolutionLA/dsh-dream-skin)）：
 
 - 模式：无 / **玻璃**（表面半透明 + 侧栏 backdrop-filter 模糊）/ **半透明**；
-- 背景：内置两种渐变 + 自定义图片 URL；
+- 背景：内置两种渐变 + 自定义图片 URL + **从手机相册选择图片**（本地图片
+  canvas 压缩到 1920px JPEG dataURL 存 localStorage，不占服务器）；
 - 表面不透明度滑杆（45%–100%）；
 - 实现：`color-mix(in srgb, var(--dsw-alias-bg-layer-1) α, transparent)` 覆盖
   `--dsw-alias-bg-base` / `--dsw-specific-sidebar-fill`——引用未覆盖的 token，
   明暗主题自动适配、无需快照；
 - 设置存 localStorage（仅本浏览器，与社区插件一致）。
 
-### 3. 文件浏览器（📁 浮动按钮，右下角）
+### 3. 文件浏览器（侧边栏「文件」按钮）
 
 手机远程浏览项目目录、读取文件：
 
@@ -75,6 +76,16 @@ web profile 的 `cordis.patch.yml` insert 列表加一行（**config 必填 root
   新加载的页面刷新即可拿到，无需重启 web 进程；
 - **host 代码（文件路由）冷生效**：node 半的 `apply` 只在进程 boot 时执行，
   首次安装或改 `lib/index.js` 后需要重启一次 dsh web 进程。
+
+## 侧边栏按钮
+
+两个入口按钮通过官方 `sidebar.footer.action` 插槽注册（`ctx.slots.inject` +
+`ctx.slots.register`），组件用 `require("react")` + `require("@deepseek-ai/dsh-client-ui-primitives")`
+（平台种子模块，非包依赖）：图标复用官方 `IconFolderOpen16` /
+`IconPersonalizationOutline16`（与 dsh 其他图标风格一致）；窄栏模式圆形
+36px 图标钮、宽栏模式图标+文字行（样式对齐设置按钮）。面板在桌面端
+（≥1024px）自动变为居中对话框。⚠️ 客户端插件用到 `ctx.slots` 必须在
+`exports.inject` 声明 `"slots"`，否则服务不可达（静默拿不到，按钮不渲染）。
 
 ## 选择器稳定性
 
