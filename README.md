@@ -1,8 +1,10 @@
 # dsh-mobile-layout
 
+![banner](docs/banner.png?v=1)
+
 DeepSeek Harness Web UI 移动端体验套件：阅读布局 + 字体密度 + 换肤 + 文件浏览器。
-host 半注册一个只读文件 HTTP 路由；client 半注入响应式 CSS 与三个交互控制器。
-**零依赖**（node 内建模块 + 注入服务）。
+host 半注册一个只读文件 HTTP 路由（webServer 服务缺失时自动跳过）；client 半
+注入响应式 CSS 与交互控制器。**零依赖**（node 内建模块 + 注入服务）。
 
 ## 功能
 
@@ -98,19 +100,26 @@ host 半注册一个只读文件 HTTP 路由；client 半注入响应式 CSS 与
 ## 安装
 
 ```bash
-dsh plugin --profile web add file:<本目录绝对路径>
+dsh plugin --profile <name> add github:crwsr124/dsh-mobile-layout
+# 或本地源码: dsh plugin --profile <name> add file:<本目录绝对路径>
 ```
 
-web profile 的 `cordis.patch.yml` insert 列表加一行（**config 必填 roots**）：
+包声明 `dsh.bundle.patch` → `dsh plugin add` 自动把插件行注册进 profile
+bundle 层（免手工 insert），**首次安装后需重启一次 dsh web 进程**（bundle
+注册是冷路径）。
+
+**文件浏览器默认不开放任何目录**（安全默认，未配置 roots 时全部 403，其余
+功能不受影响）。在自己的 `cordis.patch.yml` 里覆盖 row config 开放目录
+（whole-config 替换——插件对缺失键填默认值）：
 
 ```yaml
 - id: dsh-mobile-layout
   name: dsh-mobile-layout
   config:
     roots:
-      - /Users/cairui/PCAgent
-      - /Users/cairui/git
-    defaultPath: /Users/cairui/PCAgent
+      - /你的/项目目录
+      - /另一个/目录
+    defaultPath: /你的/项目目录
 ```
 
 生效方式：

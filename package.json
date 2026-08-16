@@ -1,7 +1,7 @@
 {
   "name": "dsh-mobile-layout",
-  "description": "dsh web 移动端体验套件：<1024px 阅读布局（抽屉侧栏+鲸鱼按钮/字体密度/表格/输入框滚动收起）+ 极光玻璃换肤（含文字对比度自动适配）+ 文件浏览器页签 + abort 错误自愈（零依赖）",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Mobile experience suite for the DeepSeek Harness web UI — reading layout (<1024px drawer sidebar + whale button), aurora glass skinning with auto text contrast, file-browser tab, abort auto-heal. Zero dependencies.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -15,14 +15,36 @@
   },
   "files": [
     "lib/index.js",
-    "lib/client.js"
+    "lib/client.js",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crwsr124/dsh-mobile-layout.git"
+  },
+  "homepage": "https://github.com/crwsr124/dsh-mobile-layout#readme",
+  "bugs": {
+    "url": "https://github.com/crwsr124/dsh-mobile-layout/issues"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "mobile",
+    "skin",
+    "theme",
+    "aurora",
+    "glass",
+    "dsh-plugin"
   ],
   "dsh": {
     "client": {
       "platform": "web",
       "inject": [],
       "immediately": true
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
     }
-  },
-  "license": "MIT"
+  }
 }
