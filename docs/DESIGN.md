@@ -88,16 +88,18 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
   text/html）——client fetch 必须校验 content-type 判断「路由未就绪」
   （首次安装未重启 web 进程时显示友好提示；上传 XHR 同样校验）。
 
-## 文件上传（v23/v24）
+## 文件上传（v23/v24/v25）
 
 - **协议**：`POST /mobile-files/upload?name=<单段文件名>[&dir=<绝对目录>]`，
   body 为文件原始字节（不做 multipart——零依赖手写解析风险高，客户端每文件
   一请求）。成功返回 `{saved, name, size}`（JSON）。
-- **目标目录（动态，不写死）**：客户端随请求带 `dir` = 文件页签当前浏览
-  目录（localStorage `dsh-mobile-files-last`）；无 `dir` 时服务端回退
-  `config.defaultPath`。服务端 `stat` 必须是已存在目录 → realpath →
-  roots 白名单校验（符号链接逃逸防护）；越权 403、不存在/非目录 400。
-  任何部署无需配置绝对上传路径（v24 移除 v23 的 `uploadDir` config）。
+- **目标目录（动态，不写死，不污染根目录）**：客户端随请求带 `dir` =
+  文件页签当前浏览目录（localStorage `dsh-mobile-files-last`）→ 服务端
+  `stat` 必须是已存在目录 → realpath → roots 白名单校验（符号链接逃逸
+  防护，越权 403、不存在/非目录 400）。**无 `dir` 时回退**（v25）：
+  `config.uploadDir`（如配置）→ 否则 `<defaultPath>/upload`（自动 mkdir），
+  最近存在祖先 + final realpath 双重 roots 校验——**回退永远是专用子目录，
+  绝不写进根目录**；两者皆无 → 403 upload-disabled（fail-closed）。
 - **安全**：文件名强制单段（`/`、`\`、`\0`、控制符、`.`/`..`、>255 字符
   全拒）；`open(path, "wx")` 原子独占创建——**绝不覆盖**，EEXIST 自动追加
   ` (n)` 序号（上限 100）；大小上限 `config.uploadMaxBytes`（默认 500MB，
@@ -174,7 +176,8 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 | v21 | 气泡/滚动条/代码块透明化 |
 | v22 | 修复时间串与气泡重叠（宽泛 `_actions` 规则回滚） |
 | v23 | 侧边栏上传文件按钮 + `POST /mobile-files/upload`（防穿越防覆盖、100MB 上限） |
-| v24 | 上传目录动态化（文件页签当前目录，defaultPath 回退，移除 uploadDir 写死路径）+ 500MB 上限 + 网关 413 错误映射 |
+| v24 | 上传目录动态化（文件页签当前目录）+ 500MB 上限 + 网关 413 错误映射 |
+| v25 | 回退目录不再落根目录：`uploadDir` 配置或自动创建 `<defaultPath>/upload`（专用子目录） |
 
 ## 发布与单源约定
 
