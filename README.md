@@ -77,6 +77,12 @@ web profile 的 `cordis.patch.yml` insert 列表加一行（**config 必填 root
 - **host 代码（文件路由）冷生效**：node 半的 `apply` 只在进程 boot 时执行，
   首次安装或改 `lib/index.js` 后需要重启一次 dsh web 进程。
 
+### 4. 输入框收起（手机端，v4）
+
+输入框上沿右侧有「收起」小圆钮（官方 chevron 图标，风格一致）：点击后整个
+composer 隐藏，会话内容占满全屏（相当于把输入框拖出屏幕底部）；右下角出现
+「展开」按钮一键恢复。状态存 localStorage 跨刷新保持；桌面端不受影响。
+
 ## 侧边栏按钮
 
 两个入口按钮通过官方 `sidebar.footer.action` 插槽注册（`ctx.slots.inject` +
