@@ -173,6 +173,9 @@ aborted a request.（internal）」且无重试入口。本插件检测到该错
   （框架计算逻辑，CSS 无法干预）。
 - composer 底部状态行沿用 stock 的 `text-overflow: ellipsis` 截断。
 - 文件浏览默认目录为 `defaultPath`（静态配置），不感知当前会话 cwd。
+- 设置弹层（v19）：玻璃皮肤的 `backdrop-filter` 会把应用内 `position:fixed`
+  的弹层钉在侧栏抽屉里（CSS 包含块规则）——打开弹层时插件临时清除祖先链
+  backdrop-filter、关闭后恢复；≤640px 面板改纵向布局、导航横排芯片行。
 - 旧浏览器兼容：v7 起表面半透明改由 JS 计算 rgba（不依赖 `color-mix`）；
   v8 起布局定位全部用显式 top/left/right/bottom（弃 `inset` 简写，Chrome 87+
   才有——老内核下极光/颗粒层会塌缩为 0 尺寸不可见）；v18 起同样为
