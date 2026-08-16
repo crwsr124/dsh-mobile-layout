@@ -28,7 +28,7 @@
 | `composerAutoHideController` | <1024px | 滚动上滑收起输入框（64px 滞回带、聚焦保护、两段式 display:none 释放空间）；点击消息文字开关式唤回；matchMedia 门控 + 切回桌面自动恢复 |
 | `skinController` | 全端（功能） | 极光玻璃皮肤 + 文字对比度强制 + token 覆盖，见下节 |
 | `filesViewController` | 全端（功能） | `conversation.view` 插槽第三个页签；vanilla 列表/预览逻辑挂进容器 div；监听 `dml-upload-done`，当前目录收到新文件时自动刷新 |
-| `uploadController` | 全端（功能） | 侧边栏「上传文件」按钮 → 隐藏多选 input → 逐个 XHR POST（raw body + `?name=`，带进度）→ 固定状态卡反馈；见「文件上传」 |
+| `uploadController` | 全端（功能） | 侧边栏「上传文件」按钮（IconPaperclipOutline16，与主题按钮同款式）→ 隐藏多选 input → 逐个 XHR POST（raw body + `?name=`，带进度）→ 固定状态卡反馈；见「文件上传」 |
 | `settingsOverlayEscapeController` | 全端 | 见「设置弹层逃逸」 |
 | drawer dismissal | <1024px | 点遮罩/会话行/新会话收起抽屉 |
 
@@ -88,18 +88,17 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
   text/html）——client fetch 必须校验 content-type 判断「路由未就绪」
   （首次安装未重启 web 进程时显示友好提示；上传 XHR 同样校验）。
 
-## 文件上传（v23/v24/v25）
+## 文件上传（v23/v24/v25/v26）
 
-- **协议**：`POST /mobile-files/upload?name=<单段文件名>[&dir=<绝对目录>]`，
-  body 为文件原始字节（不做 multipart——零依赖手写解析风险高，客户端每文件
-  一请求）。成功返回 `{saved, name, size}`（JSON）。
-- **目标目录（动态，不写死，不污染根目录）**：客户端随请求带 `dir` =
-  文件页签当前浏览目录（localStorage `dsh-mobile-files-last`）→ 服务端
-  `stat` 必须是已存在目录 → realpath → roots 白名单校验（符号链接逃逸
-  防护，越权 403、不存在/非目录 400）。**无 `dir` 时回退**（v25）：
-  `config.uploadDir`（如配置）→ 否则 `<defaultPath>/upload`（自动 mkdir），
-  最近存在祖先 + final realpath 双重 roots 校验——**回退永远是专用子目录，
-  绝不写进根目录**；两者皆无 → 403 upload-disabled（fail-closed）。
+- **协议**：`POST /mobile-files/upload?name=<单段文件名>`，body 为文件原始
+  字节（不做 multipart——零依赖手写解析风险高，客户端每文件一请求）。成功
+  返回 `{saved, name, size}`（JSON）。
+- **目标目录（服务端决定，不污染根目录）**：固定落到上传目录——
+  `config.uploadDir`（如配置）→ 否则 `<defaultPath>/upload`（自动 mkdir，
+  最近存在祖先 + final realpath 双重 roots 校验，符号链接逃逸防护）；两者
+  皆无 → 403 upload-disabled（fail-closed）。**客户端不携带目录**（v26
+  移除 v24/v25 的 `dir` 参数——「文件页签当前目录」设计按用户反馈废弃：
+  上传位置应可预期、与浏览状态解耦）。
 - **安全**：文件名强制单段（`/`、`\`、`\0`、控制符、`.`/`..`、>255 字符
   全拒）；`open(path, "wx")` 原子独占创建——**绝不覆盖**，EEXIST 自动追加
   ` (n)` 序号（上限 100）；大小上限 `config.uploadMaxBytes`（默认 500MB，
@@ -178,6 +177,7 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 | v23 | 侧边栏上传文件按钮 + `POST /mobile-files/upload`（防穿越防覆盖、100MB 上限） |
 | v24 | 上传目录动态化（文件页签当前目录）+ 500MB 上限 + 网关 413 错误映射 |
 | v25 | 回退目录不再落根目录：`uploadDir` 配置或自动创建 `<defaultPath>/upload`（专用子目录） |
+| v26 | 移除 `dir` 参数（文件页签当前目录设计废弃），上传位置固定由服务端决定；上传按钮图标改回形针（与主题按钮同款式） |
 
 ## 发布与单源约定
 

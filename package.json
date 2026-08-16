@@ -1,6 +1,6 @@
 {
   "name": "dsh-mobile-layout",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Mobile experience suite for the DeepSeek Harness web UI — reading layout (<1024px drawer sidebar + whale button), aurora glass skinning with auto text contrast, file-browser tab, sidebar file upload to the workspace, abort auto-heal. Zero dependencies.",
   "type": "module",
   "main": "lib/index.js",
