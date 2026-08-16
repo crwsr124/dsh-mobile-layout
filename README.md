@@ -175,5 +175,8 @@ aborted a request.（internal）」且无重试入口。本插件检测到该错
 - 文件浏览默认目录为 `defaultPath`（静态配置），不感知当前会话 cwd。
 - 旧浏览器兼容：v7 起表面半透明改由 JS 计算 rgba（不依赖 `color-mix`）；
   v8 起布局定位全部用显式 top/left/right/bottom（弃 `inset` 简写，Chrome 87+
-  才有——老内核下极光/颗粒层会塌缩为 0 尺寸不可见）；`backdrop-filter`
+  才有——老内核下极光/颗粒层会塌缩为 0 尺寸不可见）；v18 起同样为
+  `[class*="_overlay"]/[class*="_mask"]`（含官方设置弹层）补显式四边——
+  老内核下 app 的 `inset: 0` 被丢弃会令设置弹层塌缩、面板偏出屏幕
+  （「设置显示不全」）；`backdrop-filter`
   不支持的浏览器无模糊但透明与背景照常生效（面板内有诊断）。
