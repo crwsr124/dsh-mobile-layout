@@ -106,6 +106,16 @@ web profile 的 `cordis.patch.yml` insert 列表加一行（**config 必填 root
 
 状态不持久化——每次刷新从可见状态开始，滚一下即进入阅读模式。
 
+### 5. 历史加载 abort 错误自动愈合（v9）
+
+dsh 0.1.0-rc.6 上游竞态：断连/重连或快速切换会话时，在途的历史请求被中止，
+`Session.doOpen` 把 AbortError 当作终态错误渲染成「历史加载失败：The user
+aborted a request.（internal）」且无重试入口。本插件检测到该错误行后自动
+重新打开当前会话（id 取自 `localStorage["dsh.sessions.current"]`，经
+`ctx.get("sessions").open(id)`，回退为点击侧边栏选中行）；4 秒后仍失败则
+重试一次，再失败则刷新页面兜底。仅对 abort 类错误生效（历史损坏等其他错误
+不干预），30 秒冷却防循环。
+
 ## 侧边栏按钮
 
 两个入口按钮通过官方 `sidebar.footer.action` 插槽注册（`ctx.slots.inject` +
