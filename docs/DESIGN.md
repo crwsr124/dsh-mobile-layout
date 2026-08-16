@@ -6,7 +6,7 @@
 
 - **host 半**（`lib/index.js`，零 @deepseek-ai 依赖）：注册文件路由
   `GET /mobile-files/list|read?path=<绝对路径>` 与
-  `POST /mobile-files/upload?name=<文件名>`（v23）。`webServer` 经
+  `POST /mobile-files/upload?name=<文件名>&dir=<目标目录>`（v23/v24）。`webServer` 经
   `ctx.inject` **可选注入**——没有 web 服务的 profile 也能加载插件（文件
   浏览器/上传降级）。row 本身也负责让包出现在 host Loader 中，
   client-modules 注册表据此发现 `dsh.client` 半。
@@ -88,23 +88,31 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
   text/html）——client fetch 必须校验 content-type 判断「路由未就绪」
   （首次安装未重启 web 进程时显示友好提示；上传 XHR 同样校验）。
 
-## 文件上传（v23）
+## 文件上传（v23/v24）
 
-- **协议**：`POST /mobile-files/upload?name=<单段文件名>`，body 为文件原始
-  字节（不做 multipart——零依赖手写解析风险高，客户端每文件一请求）。成功
-  返回 `{saved, name, size}`（JSON）。
-- **目标目录**：`config.uploadDir` 优先，缺省 `<defaultPath>/workspace`；
-  两者皆无 → 上传禁用（fail-closed）。解析时向上找最近存在祖先验
-  roots 白名单，`mkdir -p` 后对 final realpath 再验一次（符号链接逃逸防护）。
+- **协议**：`POST /mobile-files/upload?name=<单段文件名>[&dir=<绝对目录>]`，
+  body 为文件原始字节（不做 multipart——零依赖手写解析风险高，客户端每文件
+  一请求）。成功返回 `{saved, name, size}`（JSON）。
+- **目标目录（动态，不写死）**：客户端随请求带 `dir` = 文件页签当前浏览
+  目录（localStorage `dsh-mobile-files-last`）；无 `dir` 时服务端回退
+  `config.defaultPath`。服务端 `stat` 必须是已存在目录 → realpath →
+  roots 白名单校验（符号链接逃逸防护）；越权 403、不存在/非目录 400。
+  任何部署无需配置绝对上传路径（v24 移除 v23 的 `uploadDir` config）。
 - **安全**：文件名强制单段（`/`、`\`、`\0`、控制符、`.`/`..`、>255 字符
   全拒）；`open(path, "wx")` 原子独占创建——**绝不覆盖**，EEXIST 自动追加
-  ` (n)` 序号（上限 100）；大小上限 `config.uploadMaxBytes`（默认 100MB）：
-  content-length 快速拒绝 + 流式计数双保险，超限/中断一律 unlink 半截文件；
-  目录只写不读，无读回通道。
-- **客户端**：XHR（`upload.onprogress` 进度）+ 固定状态卡（成功显示落盘
-  完整路径 / 失败显示原因 / 8s 自动收起 / 可手动关闭）；`dml-upload-done`
-  事件让正停在目标目录的文件页签刷新。SPA fallback 时显示「文件服务未
-  就绪（dsh web 进程重启后生效）」。
+  ` (n)` 序号（上限 100）；大小上限 `config.uploadMaxBytes`（默认 500MB，
+  手机视频量级）：content-length 快速拒绝 + 流式计数双保险，超限/中断一律
+  unlink 半截文件；无读回通道。
+- **客户端**：XHR（`upload.onprogress` 进度）+ 固定状态卡（头部明示目标
+  目录 / 成功显示落盘完整路径 / 失败显示原因 / 8s 自动收起 / 可手动关闭）；
+  `dml-upload-done` 事件让正停在目标目录的文件页签刷新。**响应映射三态**：
+  ① JSON → host 判决（saved / 错误 message）；② 200 + 非 JSON → SPA
+  fallback（host 半冷，提示重启）；③ 非 200 + 非 JSON → 网关错误——**nginx
+  默认 `client_max_body_size` 仅 1MB，大文件在网关侧就被 413（HTML 页）**，
+  客户端映射为「文件过大，超出网关大小限制」（2026-08-16 用户 19MB 视频
+  三连败实锤：nginx error.log `client intended to send too large body`）。
+  反代部署必须同时放开网关 body 上限并关闭请求缓冲
+  （`client_max_body_size` / `proxy_request_buffering off`）。
 - **认证模型**：路由本身无认证（与只读文件路由一致）——公网部署依赖
   nginx basic auth 等外部防护，README 已知限制注明。
 
@@ -165,7 +173,8 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 | v20 | 文字对比度按背景明暗自动适配 |
 | v21 | 气泡/滚动条/代码块透明化 |
 | v22 | 修复时间串与气泡重叠（宽泛 `_actions` 规则回滚） |
-| v23 | 侧边栏上传文件按钮 + `POST /mobile-files/upload`（workspace 落盘、防穿越防覆盖、100MB 上限） |
+| v23 | 侧边栏上传文件按钮 + `POST /mobile-files/upload`（防穿越防覆盖、100MB 上限） |
+| v24 | 上传目录动态化（文件页签当前目录，defaultPath 回退，移除 uploadDir 写死路径）+ 500MB 上限 + 网关 413 错误映射 |
 
 ## 发布与单源约定
 
