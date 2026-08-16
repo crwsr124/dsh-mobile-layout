@@ -30,7 +30,16 @@ DeepSeek Harness Web UI 移动端体验套件：让 dsh web 在手机上好看�
   「在新标签页打开」
 - **只读 + roots 白名单**，默认不开放任何目录（fail-closed）
 
-### 4. 稳定性增强
+### 4. 上传文件（侧边栏「上传文件」按钮）
+
+- 侧边栏底部动作区新增「上传文件」按钮（窄栏为圆形图标），点击选文件
+  （支持多选），逐个上传到服务器指定目录
+- 上传进度 / 成功（显示落盘完整路径）/ 失败逐文件显示，8 秒自动收起；
+  文件浏览器正停在目标目录时自动刷新
+- **只写一个目录、绝不覆盖**：文件名强制单段（无路径穿越），同名自动追加
+  ` (1)` 序号，单个文件默认上限 100 MB（超限拒绝，可配），失败自动清理半截文件
+
+### 5. 稳定性增强
 
 - 历史加载 abort 错误自动重试愈合（全端生效）
 
@@ -41,10 +50,11 @@ dsh plugin --profile <name> add github:crwsr124/dsh-mobile-layout
 # 或本地源码: dsh plugin --profile <name> add file:<本目录绝对路径>
 ```
 
-首次安装后**重启一次 dsh web 进程**。
+首次安装后**重启一次 dsh web 进程**（host 半的文件路由是冷路径；改 host 半
+代码后同样需要重启）。
 
-文件浏览器默认关闭。在自己的 `cordis.patch.yml` 里覆盖 row config 开放目录
-（不配 config 仅文件页签不可用，其余功能正常）：
+文件浏览 / 上传默认关闭。在自己的 `cordis.patch.yml` 里覆盖 row config 开放
+（不配 config 仅文件页签与上传按钮不可用，其余功能正常）：
 
 ```yaml
 - id: dsh-mobile-layout
@@ -53,19 +63,25 @@ dsh plugin --profile <name> add github:crwsr124/dsh-mobile-layout
       - /你的/项目目录
       - /另一个/目录
     defaultPath: /你的/项目目录
+    uploadDir: /你的/项目目录/workspace   # 可选；缺省 = <defaultPath>/workspace
+    uploadMaxBytes: 104857600             # 可选；缺省 100 MB
 ```
+
+> `uploadDir` 必须位于 `roots` 白名单内，否则上传保持禁用（fail-closed）。
 
 ## 作用范围
 
 - **仅移动端**（媒体查询门控）：阅读布局、输入框滚动收起、Session log 隐藏、
   设置面板移动端布局
-- **跨端功能**（有意为之）：换肤、文件页签、abort 自愈
+- **跨端功能**（有意为之）：换肤、文件页签、上传文件、abort 自愈
 - **皮肤关闭 / 卸载插件 = 完全还原 stock 外观**
 
 ## 已知限制
 
 - 会话轨迹（details）列在手机上无法打开（app shell 框架限制，CSS 无法干预）
 - 文件浏览按 `defaultPath` 静态配置，不感知当前会话 cwd
+- 上传路由无内置认证——公网部署务必保持 nginx basic auth 等外部防护（与
+  文件浏览路由同一威胁模型）
 - 老内核浏览器：无毛玻璃模糊（透明与背景仍生效，面板内有支持诊断）
 
 ## 开发与设计细节

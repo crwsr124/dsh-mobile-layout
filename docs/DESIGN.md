@@ -4,11 +4,12 @@
 
 ## 架构
 
-- **host 半**（`lib/index.js`，零 @deepseek-ai 依赖）：注册只读文件路由
-  `GET /mobile-files/list|read?path=<绝对路径>`。`webServer` 经 `ctx.inject`
-  **可选注入**——没有 web 服务的 profile 也能加载插件（文件浏览器降级）。
-  row 本身也负责让包出现在 host Loader 中，client-modules 注册表据此发现
-  `dsh.client` 半。
+- **host 半**（`lib/index.js`，零 @deepseek-ai 依赖）：注册文件路由
+  `GET /mobile-files/list|read?path=<绝对路径>` 与
+  `POST /mobile-files/upload?name=<文件名>`（v23）。`webServer` 经
+  `ctx.inject` **可选注入**——没有 web 服务的 profile 也能加载插件（文件
+  浏览器/上传降级）。row 本身也负责让包出现在 host Loader 中，
+  client-modules 注册表据此发现 `dsh.client` 半。
 - **client 半**（`lib/client.js`，手写 `window.__ModuleLoader__.load({id,
   factory})` CJS-factory 格式，零依赖）：注入一段响应式 CSS + 若干控制器
   （见下）。`react` 与 `@deepseek-ai/dsh-client-ui-primitives` 是平台种子模块
@@ -26,7 +27,8 @@
 | `whaleButtonController` | <1024px | 固定定位鲸鱼按钮（官方 FishLogo 路径内联，z38 在抽屉 z40 之下），经 `ctx.layout.toggleSidebar()` 软依赖开抽屉；frame `data-sidebar-collapsed` 属性观察器同步淡出 |
 | `composerAutoHideController` | <1024px | 滚动上滑收起输入框（64px 滞回带、聚焦保护、两段式 display:none 释放空间）；点击消息文字开关式唤回；matchMedia 门控 + 切回桌面自动恢复 |
 | `skinController` | 全端（功能） | 极光玻璃皮肤 + 文字对比度强制 + token 覆盖，见下节 |
-| `filesViewController` | 全端（功能） | `conversation.view` 插槽第三个页签；vanilla 列表/预览逻辑挂进容器 div |
+| `filesViewController` | 全端（功能） | `conversation.view` 插槽第三个页签；vanilla 列表/预览逻辑挂进容器 div；监听 `dml-upload-done`，当前目录收到新文件时自动刷新 |
+| `uploadController` | 全端（功能） | 侧边栏「上传文件」按钮 → 隐藏多选 input → 逐个 XHR POST（raw body + `?name=`，带进度）→ 固定状态卡反馈；见「文件上传」 |
 | `settingsOverlayEscapeController` | 全端 | 见「设置弹层逃逸」 |
 | drawer dismissal | <1024px | 点遮罩/会话行/新会话收起抽屉 |
 
@@ -84,7 +86,27 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
   403）；只读；no-cache。
 - **SPA fallback 坑**：webServer 对未注册路径回退 index.html（200 +
   text/html）——client fetch 必须校验 content-type 判断「路由未就绪」
-  （首次安装未重启 web 进程时显示友好提示）。
+  （首次安装未重启 web 进程时显示友好提示；上传 XHR 同样校验）。
+
+## 文件上传（v23）
+
+- **协议**：`POST /mobile-files/upload?name=<单段文件名>`，body 为文件原始
+  字节（不做 multipart——零依赖手写解析风险高，客户端每文件一请求）。成功
+  返回 `{saved, name, size}`（JSON）。
+- **目标目录**：`config.uploadDir` 优先，缺省 `<defaultPath>/workspace`；
+  两者皆无 → 上传禁用（fail-closed）。解析时向上找最近存在祖先验
+  roots 白名单，`mkdir -p` 后对 final realpath 再验一次（符号链接逃逸防护）。
+- **安全**：文件名强制单段（`/`、`\`、`\0`、控制符、`.`/`..`、>255 字符
+  全拒）；`open(path, "wx")` 原子独占创建——**绝不覆盖**，EEXIST 自动追加
+  ` (n)` 序号（上限 100）；大小上限 `config.uploadMaxBytes`（默认 100MB）：
+  content-length 快速拒绝 + 流式计数双保险，超限/中断一律 unlink 半截文件；
+  目录只写不读，无读回通道。
+- **客户端**：XHR（`upload.onprogress` 进度）+ 固定状态卡（成功显示落盘
+  完整路径 / 失败显示原因 / 8s 自动收起 / 可手动关闭）；`dml-upload-done`
+  事件让正停在目标目录的文件页签刷新。SPA fallback 时显示「文件服务未
+  就绪（dsh web 进程重启后生效）」。
+- **认证模型**：路由本身无认证（与只读文件路由一致）——公网部署依赖
+  nginx basic auth 等外部防护，README 已知限制注明。
 
 ## 兼容性清单
 
@@ -120,7 +142,7 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 ## 作用域契约
 
 - 阅读布局/输入框行为全部媒体查询门控（<1024px）；
-- 换肤、文件页签、弹层逃逸、abort 自愈为跨端功能（有意为之）；
+- 换肤、文件页签、上传文件、弹层逃逸、abort 自愈为跨端功能（有意为之）；
 - 所有 token 覆盖与边框柔化挂在 `body[data-dsh-mobile-skin]` 之下——皮肤
   关闭/卸载插件 = 完全还原 stock。仅两条无条件规则：`_overlay/_mask` 显式
   四边（老内核兼容，现代浏览器与 stock 等价）、标题行 `flex-wrap`（桌面
@@ -143,6 +165,7 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 | v20 | 文字对比度按背景明暗自动适配 |
 | v21 | 气泡/滚动条/代码块透明化 |
 | v22 | 修复时间串与气泡重叠（宽泛 `_actions` 规则回滚） |
+| v23 | 侧边栏上传文件按钮 + `POST /mobile-files/upload`（workspace 落盘、防穿越防覆盖、100MB 上限） |
 
 ## 发布与单源约定
 
