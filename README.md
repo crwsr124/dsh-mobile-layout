@@ -22,20 +22,27 @@ host 半注册一个只读文件 HTTP 路由；client 半注入响应式 CSS 与
 
 桌面端（≥1024px）行为完全不变。
 
-### 2. 换肤（侧边栏「主题与背景」按钮）
+### 2. 换肤（侧边栏「主题与背景」按钮，v6 极光玻璃主题）
 
 参考社区换肤插件设计（[dsh-skin](https://github.com/KinGao294/dsh-skin) /
 [dsh-theme-plugin](https://github.com/BeiZi6/dsh-theme-plugin) /
-[dsh-dream-skin](https://github.com/RevolutionLA/dsh-dream-skin)）：
+[dsh-dream-skin](https://github.com/RevolutionLA/dsh-dream-skin)），并升级为
+完整的「极光玻璃」视觉方案：
 
-- 模式：无 / **玻璃**（表面半透明 + 侧栏 backdrop-filter 模糊）/ **半透明**；
-- 背景：内置两种渐变 + 自定义图片 URL + **从手机相册选择图片**（本地图片
-  canvas 压缩到 1920px JPEG dataURL 存 localStorage，不占服务器）；
-- 表面不透明度滑杆（45%–100%）；
-- 实现：`color-mix(in srgb, var(--dsw-alias-bg-layer-1) α, transparent)` 覆盖
-  `--dsw-alias-bg-base` / `--dsw-specific-sidebar-fill`——引用未覆盖的 token，
-  明暗主题自动适配、无需快照；
-- 设置存 localStorage（仅本浏览器，与社区插件一致）。
+- **模式**：无 / **玻璃** / 半透明；
+- **极光背景**：四套预设（蓝紫 / 暖阳 / 青绿 / 单色·墨）——深色基底渐变之上
+  是多层彩色光斑（48px 高斯模糊 + 饱和提升），以 26s 周期缓慢漂移旋转；切换
+  预设时光斑淡出-换色-淡入（250ms）；
+- **电影颗粒**：SVG feTurbulence 噪点层，overlay 混合 5% 透明度，覆盖全屏
+  增加质感；
+- **玻璃表面**：会话区/侧栏 blur(24px)+saturate(1.5)、输入框 blur(16px)、
+  面板 blur(28px)；表面颜色 `color-mix(bg-layer-1 α, transparent)` 默认 62%
+  不透明度（可滑杆 40%–100%）——引用未覆盖 token，明暗主题自动适配；侧栏
+  右侧加 1px 高光描边；
+- **自定义图片**：URL 或**手机相册选图**（canvas 压 1920px JPEG dataURL 存
+  localStorage）；选图/填 URL 时**自动从「无」切换到玻璃模式**（修复了选图
+  不生效的问题）；iOS 兼容（不用 `background-attachment: fixed`）；
+- `prefers-reduced-motion` 用户自动关闭光斑动画；设置存 localStorage。
 
 ### 3. 文件浏览器（侧边栏「文件」按钮）
 
