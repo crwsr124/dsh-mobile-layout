@@ -55,9 +55,10 @@ host 半注册一个只读文件 HTTP 路由；client 半注入响应式 CSS 与
 - `prefers-reduced-motion` 用户自动关闭光斑动画；设置存 localStorage；
   面板底部显示本浏览器毛玻璃支持诊断（✓/✗）。
 
-### 3. 文件浏览器（侧边栏「文件」按钮）
+### 3. 文件浏览器（「文件」页签，与对话/轨迹并列）
 
-手机远程浏览项目目录、读取文件：
+通过官方 `conversation.view` 列表插槽注册为第三个页签（对话 | 轨迹 | 文件），
+点击页签即在会话区内切换；手机远程浏览项目目录、读取文件：
 
 - host 路由 `GET /mobile-files/list|read?path=<绝对路径>`（本包 node 半注册，
   经 `ctx.webServer`，只读、大小上限 2MB 文本 / 40MB 二进制、no-cache）；
@@ -139,10 +140,10 @@ aborted a request.（internal）」且无重试入口。本插件检测到该错
 
 ## 侧边栏按钮
 
-两个入口按钮通过官方 `sidebar.footer.action` 插槽注册（`ctx.slots.inject` +
+「主题与背景」按钮通过官方 `sidebar.footer.action` 插槽注册（`ctx.slots.inject` +
 `ctx.slots.register`），组件用 `require("react")` + `require("@deepseek-ai/dsh-client-ui-primitives")`
-（平台种子模块，非包依赖）：图标复用官方 `IconFolderOpen16` /
-`IconPersonalizationOutline16`（与 dsh 其他图标风格一致）；窄栏模式圆形
+（平台种子模块，非包依赖）：图标复用官方 `IconPersonalizationOutline16`
+（与 dsh 其他图标风格一致）；窄栏模式圆形
 36px 图标钮、宽栏模式图标+文字行（样式对齐设置按钮）。面板在桌面端
 （≥1024px）自动变为居中对话框。⚠️ 客户端插件用到 `ctx.slots` 必须在
 `exports.inject` 声明 `"slots"`，否则服务不可达（静默拿不到，按钮不渲染）。
