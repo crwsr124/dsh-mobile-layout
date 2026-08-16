@@ -60,6 +60,7 @@ host 半注册一个只读文件 HTTP 路由；client 半注入响应式 CSS 与
 - **自定义图片**：URL 或**手机相册选图**（canvas 压 1920px JPEG dataURL 存
   localStorage）；选图/填 URL 时**自动从「无」切换到玻璃模式**（修复了选图
   不生效的问题）；iOS 兼容（不用 `background-attachment: fixed`）；
+- **透明化**（v21）：用户消息气泡（`--dsw-specific-bubble`）与全局滚动条滑杆（`--dsw-alias-scrollbar-bg/hover-l1/l2`）随玻璃表面同源半透明（滑杆比表面稍实、0.45 下限保可抓取），文字保持不透明；皮肤关闭精确还原。
 - **文字对比度自动适配**（v20）：皮肤激活时按背景明暗自动切换应用文字主题——三套浅色极光自动启用浅色文字主题（深色文字+浅色表面），单色·墨启用深色文字主题；自定义图片按感知亮度采样自动选择。纯呈现层切换（`data-ds-dark-theme`），不改动设置里的外观偏好，关闭皮肤后精确还原；面板提示行显示当前适配状态。
 - `prefers-reduced-motion` 用户自动关闭光斑动画；设置存 localStorage；
   面板底部显示本浏览器毛玻璃支持诊断（✓/✗）。
