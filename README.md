@@ -31,18 +31,23 @@ host 半注册一个只读文件 HTTP 路由；client 半注入响应式 CSS 与
 
 - **模式**：无 / **玻璃** / 半透明；
 - **极光背景**：四套预设（蓝紫 / 暖阳 / 青绿 / 单色·墨）——深色基底渐变之上
-  是多层彩色光斑（48px 高斯模糊 + 饱和提升），以 26s 周期缓慢漂移旋转；切换
-  预设时光斑淡出-换色-淡入（250ms）；
+  是多层高饱和彩色光斑（26px 高斯模糊，光斑透明度 0.7-0.95 保证肉眼可见），
+  以 26s 周期缓慢漂移旋转；切换预设时光斑淡出-换色-淡入（250ms）；
 - **电影颗粒**：SVG feTurbulence 噪点层，overlay 混合 5% 透明度，覆盖全屏
   增加质感；
-- **玻璃表面**：会话区/侧栏 blur(24px)+saturate(1.5)、输入框 blur(16px)、
-  面板 blur(28px)；表面颜色 `color-mix(bg-layer-1 α, transparent)` 默认 62%
-  不透明度（可滑杆 40%–100%）——引用未覆盖 token，明暗主题自动适配；侧栏
-  右侧加 1px 高光描边；
+- **玻璃表面**（v7 兼容性重构）：表面半透明由 **JS 实时计算 rgba** 写入 token
+  （`--dsw-alias-bg-base` / `--dsw-specific-sidebar-fill` /
+  `--dsw-specific-input-major`，inline `important` 优先级）——**不依赖
+  `color-mix()`，所有浏览器可用**；色源取未覆盖的 `bg-layer-1` token，主题
+  切换时自动重算（明暗自适应）；默认 50% 不透明度（滑杆 30%–100%），侧栏更
+  通透（×0.66）、输入框略实（×0.85）形成层次；毛玻璃 blur：会话区 16px /
+  侧栏 26px / 输入框 14px / 面板 24px（+ saturate 1.5-1.7），不支持
+  backdrop-filter 的浏览器透明仍生效；侧栏 1px 高光描边；
 - **自定义图片**：URL 或**手机相册选图**（canvas 压 1920px JPEG dataURL 存
   localStorage）；选图/填 URL 时**自动从「无」切换到玻璃模式**（修复了选图
   不生效的问题）；iOS 兼容（不用 `background-attachment: fixed`）；
-- `prefers-reduced-motion` 用户自动关闭光斑动画；设置存 localStorage。
+- `prefers-reduced-motion` 用户自动关闭光斑动画；设置存 localStorage；
+  面板底部显示本浏览器毛玻璃支持诊断（✓/✗）。
 
 ### 3. 文件浏览器（侧边栏「文件」按钮）
 
@@ -126,5 +131,5 @@ web profile 的 `cordis.patch.yml` insert 列表加一行（**config 必填 root
   （框架计算逻辑，CSS 无法干预）。
 - composer 底部状态行沿用 stock 的 `text-overflow: ellipsis` 截断。
 - 文件浏览默认目录为 `defaultPath`（静态配置），不感知当前会话 cwd。
-- 颜色混合依赖 `color-mix`（Chrome 111+ / Safari 16.2+，2023 年后设备均支持）；
-  旧浏览器上换肤不生效但布局功能不受影响。
+- 旧浏览器兼容：v7 起表面半透明改由 JS 计算 rgba（不依赖 `color-mix`）；
+  `backdrop-filter` 不支持的浏览器无模糊但透明与背景照常生效（面板内有诊断）。
