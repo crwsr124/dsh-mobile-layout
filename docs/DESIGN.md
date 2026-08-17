@@ -30,14 +30,16 @@
 | `filesViewController` | 全端（功能） | `conversation.view` 插槽第三个页签；vanilla 列表/预览逻辑挂进容器 div；监听 `dml-upload-done`，当前目录收到新文件时自动刷新 |
 | `uploadController` | 全端（功能） | 侧边栏「上传文件」按钮（IconPaperclipOutline16，与主题按钮同款式）→ 隐藏多选 input → 逐个 XHR POST（raw body + `?name=`，带进度）→ 固定状态卡反馈；见「文件上传」 |
 | `settingsOverlayEscapeController` | 全端 | 见「设置弹层逃逸」 |
-| drawer dismissal | <1024px | 点遮罩/会话行/新会话收起抽屉 |
+| drawer dismissal | <1024px | 点遮罩、会话标题主体或新会话收起抽屉；工作区展开、状态/时间和会话操作菜单保持抽屉展开 |
 
 ## 换肤实现
 
-- **表面半透明 = JS 计算 rgba**（不依赖 `color-mix`，Chrome 111 之前的浏览器
-  可用）：解析未覆盖的 `--dsw-alias-bg-layer-1` 计算值（`parseColor` 处理
-  #hex / rgb() / color(srgb) 三种形态）→ 按滑杆 alpha 生成 rgba → inline
-  `!important` 写入 token。覆盖清单（单源 `GLASS_TOKENS`）：
+- **表面半透明 = JS 计算 rgba + 官方主题 override layer**（不依赖
+  `color-mix`，Chrome 111 之前的浏览器可用）：解析当前
+  `--dsw-alias-bg-layer-1` 计算值（`parseColor` 处理 #hex / rgb() /
+  color(srgb) 三种形态）→ 按滑杆 alpha 生成 rgba → 通过
+  `theme.overrideTokens()` 发布成具名可撤销层。关闭皮肤或卸载时移除本层，
+  自动恢复下一层主题，不直接删除其他插件的 inline 值。覆盖 token 包括：
   `--dsw-alias-bg-base`、`--dsw-specific-sidebar-fill`（×0.66）、
   `--dsw-specific-input-major`（×0.85）、`--dsw-specific-bubble`（用户气泡）、
   `--dsw-alias-markdown-code-block` / `-banner` / `-inline-code`（代码块，
@@ -50,8 +52,10 @@
 - **Chromium 渐变底缘缺陷**：透明 1px 边框 + background-image 渐变会把底缘
   行渲染成渐变首色（1px 白线）——玻璃化元素一律 `border-bottom: none`
   （截图像素扫描消融实验定位）。
-- **明暗自适应**：MutationObserver 监听 body `data-ds-dark-theme` + `style`
-  （120ms debounce）→ 快照 bg-layer-1 → 变了才重写表面 token（防循环）。
+- **明暗自适应**：背景预设或图片亮度决定临时呈现的明暗 palette；
+  `theme/change` 只在皮肤仍持有明暗所有权时重新断言，表面 token 随最终测光结果
+  重新发布。背景和明暗分别使用 owner attribute + compare-and-restore 语义，检测到
+  其他视觉插件 owner 时整套皮肤自动退让。
 - **边框柔化**：玻璃/半透明皮肤激活时在三列作用域覆盖
   `--dsw-alias-border-l1/l2/l3/l2-darkmode-thin` 为 10-12% 半透明灰
   （自定义属性按继承解析，范围内所有用 token 的边框一次性变淡）。
@@ -60,11 +64,10 @@
 
 皮肤激活时按背景明暗驱动应用主题呈现：极光蓝紫/暖阳/青绿=浅色主题、
 单色·墨=深色主题、自定义图片=canvas 24×24 感知亮度采样（≥128 判浅）。
-机制：直接写 `body[data-ds-dark-theme]` + `documentElement.style.colorScheme`
-（内置明暗调色板在样式表里由该属性选择器切换，`overrideTokens` 不适用——
-内置主题 tokens 为空对象）。纯呈现层：不动用户外观偏好；`ctx.on("theme/change")`
-+ MutationObserver 在应用自己写属性后重新断言强制值；释放时经主题服务
-`getTheme().active.colorScheme` 精确还原。跨域图片采样：先
+机制：基础明暗仍由 `body[data-ds-dark-theme]` + `documentElement.style.colorScheme`
+选择，插件只做临时呈现，不改用户外观偏好。写入前检查
+`data-dsh-color-scheme-owner`，释放时仅在 owner 和当前值仍属于本插件时恢复
+`ctx.theme.getTheme().active.colorScheme`；若其他插件已接管则不覆盖。跨域图片采样：先
 `crossOrigin="anonymous"`，失败降级无 CORS 重试，canvas 被污染则回退深色。
 
 ## 设置弹层逃逸（v19）
@@ -81,9 +84,13 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 - **协议**：`GET /mobile-files/list?path=` 返回 JSON
   `{path, root, defaultPath, crumbs, entries[{name,path,dir,hidden,size,mtime}], truncated}`
   （目录优先排序、2000 条截断）；`GET /mobile-files/read?path=` 按扩展名判
-  文本/二进制（2MB / 40MB 上限），`content-disposition: inline`，HEAD 支持。
+  文本/二进制（2MB / 40MB 上限），`content-disposition: inline`，HEAD 支持；
+  `GET /mobile-files/download?path=` 以 attachment 流式下载，不受预览大小上限影响。
+- **客户端一致性**：每次目录导航取消上一请求，并以单调 request id 丢弃晚到响应；
+  fetch 使用 `cache: no-store`，从预览返回时强制恢复列表显示；面包屑末尾提供手动刷新。
+  预览保存条目的完整绝对路径，打开新页和下载不再通过目录+文件名二次拼接。
 - **安全**：realpath 后必须落在 `config.roots` 白名单内（穿越/符号链接逃逸
-  403）；只读；no-cache。
+  403）；只读；no-store。
 - **SPA fallback 坑**：webServer 对未注册路径回退 index.html（200 +
   text/html）——client fetch 必须校验 content-type 判断「路由未就绪」
   （首次安装未重启 web 进程时显示友好提示；上传 XHR 同样校验）。
@@ -150,12 +157,15 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 
 ## 作用域契约
 
-- 阅读布局/输入框行为全部媒体查询门控（<1024px）；
+- 阅读布局/输入框行为全部媒体查询门控（<1024px），且仅在
+  `body[data-dsh-mobile-layout-owner="dsh-mobile-layout"]` 下生效；插件启动时只在
+  owner 空闲时认领，卸载时用 CAS 语义释放。检测到其他布局 owner 时文件、上传、
+  换肤和 abort 自愈仍可用。
 - 换肤、文件页签、上传文件、弹层逃逸、abort 自愈为跨端功能（有意为之）；
-- 所有 token 覆盖与边框柔化挂在 `body[data-dsh-mobile-skin]` 之下——皮肤
-  关闭/卸载插件 = 完全还原 stock。仅两条无条件规则：`_overlay/_mask` 显式
-  四边（老内核兼容，现代浏览器与 stock 等价）、标题行 `flex-wrap`（桌面
-  窄列防御性修复）。
+- 表面 token 由 `theme.overrideTokens()` 分层管理；背景、明暗呈现和布局各自使用
+  owner 属性，关闭/卸载仅恢复本插件仍拥有的值，不会清空后写入者状态。边框柔化
+  挂在 `body[data-dsh-mobile-skin]` 下。仅 `_overlay/_mask` 显式四边为无条件兼容
+  规则（现代浏览器与 stock 等价）。
 
 ## 版本历史摘要
 
@@ -178,6 +188,7 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 | v24 | 上传目录动态化（文件页签当前目录）+ 500MB 上限 + 网关 413 错误映射 |
 | v25 | 回退目录不再落根目录：`uploadDir` 配置或自动创建 `<defaultPath>/upload`（专用子目录） |
 | v26 | 移除 `dir` 参数（文件页签当前目录设计废弃），上传位置固定由服务端决定；上传按钮图标改回形针（与主题按钮同款式） |
+| v27 / 0.7.0 | 高风险共存修复：theme override layer、背景/明暗/布局 owner + CAS 恢复、完整热卸载；目录请求取消与防缓存、手动刷新、流式下载到设备 |
 
 ## 发布与单源约定
 
