@@ -25,7 +25,7 @@
 |---|---|---|
 | `abortRetryController` | 全端 | 检测 `_openError` 含 abort → `sessions.open(id)` 重开 → 2s 复查 → reload 兜底；30s 冷却，仅 abort 类触发 |
 | `whaleButtonController` | <1024px | 固定定位鲸鱼按钮（官方 FishLogo 路径内联，z38 在抽屉 z40 之下），经 `ctx.layout.toggleSidebar()` 软依赖开抽屉；frame `data-sidebar-collapsed` 属性观察器同步淡出 |
-| `composerAutoHideController` | <1024px | 滚动上滑收起输入框（64px 滞回带、聚焦保护、两段式 display:none 释放空间）；点击消息文字开关式唤回；matchMedia 门控 + 切回桌面自动恢复 |
+| `composerAutoHideController` | <1024px | 滚动上滑或选择已有会话收起输入框（64px 滞回带、聚焦保护、两段式 display:none 释放空间）；会话切换短暂拦截上游 autofocus 以避免手机键盘弹出；点击消息文字开关式唤回；matchMedia 门控 + 切回桌面自动恢复 |
 | `skinController` | 全端（功能） | 极光玻璃皮肤 + 文字对比度强制 + token 覆盖，见下节 |
 | `filesViewController` | 全端（功能） | `conversation.view` 插槽第三个页签；vanilla 列表/预览逻辑挂进容器 div；监听 `dml-upload-done`，当前目录收到新文件时自动刷新 |
 | `uploadController` | 全端（功能） | 侧边栏「上传文件」按钮（IconPaperclipOutline16，与主题按钮同款式）→ 隐藏多选 input → 逐个 XHR POST（raw body + `?name=`，带进度）→ 固定状态卡反馈；见「文件上传」 |
