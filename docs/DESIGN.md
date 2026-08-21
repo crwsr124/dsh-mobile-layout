@@ -25,7 +25,7 @@
 |---|---|---|
 | `abortRetryController` | 全端 | 检测 `_openError` 含 abort → `sessions.open(id)` 重开 → 2s 复查 → reload 兜底；30s 冷却，仅 abort 类触发 |
 | `whaleButtonController` | <1024px | 固定定位鲸鱼按钮（官方 FishLogo 路径内联，z38 在抽屉 z40 之下），经 `ctx.layout.toggleSidebar()` 软依赖开抽屉；frame `data-sidebar-collapsed` 属性观察器同步淡出 |
-| `composerAutoHideController` | <1024px | 滚动上滑或选择已有会话收起输入框（64px 滞回带、聚焦保护、两段式 display:none 释放空间）；会话切换短暂拦截上游 autofocus 以避免手机键盘弹出；点击消息文字开关式唤回；matchMedia 门控 + 切回桌面自动恢复 |
+| `composerAutoHideController` | <1024px | 滚动上滑或选择已有会话收起输入框（64px 滞回带、聚焦保护、两段式 display:none 释放空间）；页面初始化只判定一次：恢复到 `active` 已有会话时默认收起并拦截 autofocus，初始 `hero` 则保持可见且取消后续首次消息误收起；点击“新会话”时预恢复，并监听稳定属性 `data-phase=hero` 在异步切换完成后再次恢复；点击消息文字显示并聚焦；matchMedia 门控 + 切回桌面自动恢复 |
 | `skinController` | 全端（功能） | 极光玻璃皮肤 + 文字对比度强制 + token 覆盖，见下节 |
 | `filesViewController` | 全端（功能） | `conversation.view` 插槽第三个页签；vanilla 列表/预览逻辑挂进容器 div；监听 `dml-upload-done`，当前目录收到新文件时自动刷新 |
 | `uploadController` | 全端（功能） | 侧边栏「上传文件」按钮（IconPaperclipOutline16，与主题按钮同款式）→ 隐藏多选 input → 逐个 XHR POST（raw body + `?name=`，带进度）→ 固定状态卡反馈；见「文件上传」 |
@@ -84,31 +84,19 @@ panel，触摸手势找不到可滚动祖先。滚动区保留 iOS safe-area 底
 
 ## 文件浏览器
 
-- **协议**：`GET /mobile-files/list?path=` 返回 JSON
-  `{path, root, defaultPath, crumbs, entries[{name,path,dir,hidden,size,mtime}], truncated}`
-  （目录优先排序、2000 条截断）；`GET /mobile-files/read?path=` 按扩展名判
-  文本/二进制（2MB / 40MB 上限），`content-disposition: inline`，HEAD 支持；
-  `GET /mobile-files/download?path=` 以 attachment 流式下载，不受预览大小上限影响。
-- **客户端一致性**：每次目录导航取消上一请求，并以单调 request id 丢弃晚到响应；
-  fetch 使用 `cache: no-store`，从预览返回时强制恢复列表显示；面包屑末尾提供手动刷新。
-  预览保存条目的完整绝对路径，打开新页和下载不再通过目录+文件名二次拼接。
-- **安全**：realpath 后必须落在 `config.roots` 白名单内（穿越/符号链接逃逸
-  403）；只读；no-store。
+- **协议**：所有请求必须带 `sessionId`。`GET /mobile-files/list?sessionId=&path=` 返回
+  `{sessionId, workspaceId, path, root, crumbs, entries[{name,path,dir,hidden,size,mtime}], truncated}`
+  （目录优先排序、2000 条截断）；`GET /mobile-files/read|download?sessionId=&path=` 分别用于预览和流式下载。
+- **工作区跟随**：客户端订阅 `sessions.list`，以会话摘要 `cwd` 作为工作区键。当前 session 变化但 cwd 相同时，只替换请求凭据并保留当前目录；文件页签重挂载直接渲染控制器层缓存，不发新的 list 请求；同时按 `workspace cwd + directory path` 保存并恢复 `.dml-list.scrollTop`，切换会话/页签不改变阅读位置。文件视图和上游 viewArea 形成完整的 `flex:1; min-height:0; overflow:hidden` 收缩链，由列表自身承担滚动，避免复用 conversation scrollBody 的底部位置。只有 cwd 改变才取消旧目录、预览和下载请求、清空缓存并从新工作区根加载。所有异步响应都绑定发起时的工作区键，晚到结果不能覆盖新工作区。
+- **安全**：浏览器不传可信 root。Host 用 `workspaceRegistry.list()` 将 sessionId 解析到已注册 Workspace，并以服务端 canonical path 为唯一根；未知/未绑定 session、跨工作区绝对路径和 symlink 逃逸均拒绝。只读响应 no-store。
 - **SPA fallback 坑**：webServer 对未注册路径回退 index.html（200 +
   text/html）——client fetch 必须校验 content-type 判断「路由未就绪」
   （首次安装未重启 web 进程时显示友好提示；上传 XHR 同样校验）。
 
 ## 文件上传（v23/v24/v25/v26）
 
-- **协议**：`POST /mobile-files/upload?name=<单段文件名>`，body 为文件原始
-  字节（不做 multipart——零依赖手写解析风险高，客户端每文件一请求）。成功
-  返回 `{saved, name, size}`（JSON）。
-- **目标目录（服务端决定，不污染根目录）**：固定落到上传目录——
-  `config.uploadDir`（如配置）→ 否则 `<defaultPath>/upload`（自动 mkdir，
-  最近存在祖先 + final realpath 双重 roots 校验，符号链接逃逸防护）；两者
-  皆无 → 403 upload-disabled（fail-closed）。**客户端不携带目录**（v26
-  移除 v24/v25 的 `dir` 参数——「文件页签当前目录」设计按用户反馈废弃：
-  上传位置应可预期、与浏览状态解耦）。
+- **协议**：`POST /mobile-files/upload?sessionId=&name=<单段文件名>`，body 为文件原始字节（不做 multipart；客户端每文件一请求）。成功返回 `{saved, name, size}`（JSON）。
+- **目标目录**：Host 先用 sessionId 解析可信 Workspace 根，再固定落到 `<workspace>/upload`（自动 mkdir；最近存在祖先和最终 realpath 都必须位于该根）。客户端不携带目录；上传任务固定使用开始时的 sessionId，切换工作区不会把后续文件写到另一根。
 - **安全**：文件名强制单段（`/`、`\`、`\0`、控制符、`.`/`..`、>255 字符
   全拒）；`open(path, "wx")` 原子独占创建——**绝不覆盖**，EEXIST 自动追加
   ` (n)` 序号（上限 100）；大小上限 `config.uploadMaxBytes`（默认 500MB，
@@ -193,6 +181,12 @@ panel，触摸手势找不到可滚动祖先。滚动区保留 iOS safe-area 底
 | v26 | 移除 `dir` 参数（文件页签当前目录设计废弃），上传位置固定由服务端决定；上传按钮图标改回形针（与主题按钮同款式） |
 | v27 / 0.7.0 | 高风险共存修复：theme override layer、背景/明暗/布局 owner + CAS 恢复、完整热卸载；目录请求取消与防缓存、手动刷新、流式下载到设备 |
 | 0.7.2 | 修复移动端设置模型编辑长表单无法滚动：补齐 flex 收缩链、内容区惯性滚动与底部安全区 |
+| 0.7.3 | 曾按 root-slot/HMR 假设加入空根刷新；后续精确复现证明与本问题无关，0.7.4 已撤销 |
+| 0.7.4 | 修复移动端阅读态的 composer 隐藏类跨会话残留：新建空白会话进入 hero 时强制恢复唯一输入主体 |
+| 0.7.5 | 刷新恢复已有会话时默认进入阅读态：初始化 active 仅自动收起一次，点击消息正文后显示并聚焦；初始 hero 保持可见 |
+| 0.8.0 | 文件浏览器根目录自动跟随当前会话工作区；Host 按 sessionId 从 Workspace 注册表解析可信根，删除 roots/defaultPath/uploadDir 配置；上传进入 `<workspace>/upload` |
+| 0.8.1 | 同工作区切换会话保留目录缓存，并按 workspace+directory 恢复文件列表滚动位置；跨工作区才回根请求 |
+| 0.8.2 | 文件 view 独立滚动区修复：补齐 viewArea/dml-files-view/list flex 收缩链，切换页签不再复用 conversation scrollBody 的底部位置；按 workspace+directory 双帧恢复 scrollTop |
 
 ## 发布与单源约定
 

@@ -1,8 +1,6 @@
 # dsh-mobile-layout bundle patch: mounts the plugin row into the host
-# composition. Ships with NO roots — the file browser is fail-closed by
-# default; deployments open directories by overriding the row config in
-# their own cordis.patch.yml (whole-config replacement — the plugin fills
-# missing keys with defaults).
+# composition. File access is derived from the current session's server-owned
+# Workspace registration; no directory path configuration is required.
 - insert:
     - id: dsh-mobile-layout
       name: dsh-mobile-layout
