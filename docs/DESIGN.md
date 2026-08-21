@@ -77,7 +77,10 @@
 280px 抽屉里。修复：MutationObserver（120ms debounce）找固定 overlay → 祖先链
 backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须用「Map 里有
 记录」而非「computed bf 非 none」（后者会因自己刚置的 none 误判恢复，形成
-闪烁循环）。≤640px 面板另加纵向重排（导航横排芯片行）。
+闪烁循环）。≤640px 面板另加纵向重排（导航横排芯片行）。内容列必须形成完整的
+flex 收缩链（`content min-height:0` → `options flex:1; min-height:0`），并由
+`options` 独立承担 `overflow-y:auto`；否则模型编辑器等长表单只会撑出固定高度
+panel，触摸手势找不到可滚动祖先。滚动区保留 iOS safe-area 底部留白。
 
 ## 文件浏览器
 
@@ -189,6 +192,7 @@ backdrop-filter 临时置 none（Map 记原值）→ 关闭恢复。判据必须
 | v25 | 回退目录不再落根目录：`uploadDir` 配置或自动创建 `<defaultPath>/upload`（专用子目录） |
 | v26 | 移除 `dir` 参数（文件页签当前目录设计废弃），上传位置固定由服务端决定；上传按钮图标改回形针（与主题按钮同款式） |
 | v27 / 0.7.0 | 高风险共存修复：theme override layer、背景/明暗/布局 owner + CAS 恢复、完整热卸载；目录请求取消与防缓存、手动刷新、流式下载到设备 |
+| 0.7.2 | 修复移动端设置模型编辑长表单无法滚动：补齐 flex 收缩链、内容区惯性滚动与底部安全区 |
 
 ## 发布与单源约定
 
