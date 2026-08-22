@@ -187,6 +187,7 @@ panel，触摸手势找不到可滚动祖先。滚动区保留 iOS safe-area 底
 | 0.8.0 | 文件浏览器根目录自动跟随当前会话工作区；Host 按 sessionId 从 Workspace 注册表解析可信根，删除 roots/defaultPath/uploadDir 配置；上传进入 `<workspace>/upload` |
 | 0.8.1 | 同工作区切换会话保留目录缓存，并按 workspace+directory 恢复文件列表滚动位置；跨工作区才回根请求 |
 | 0.8.2 | 文件 view 独立滚动区修复：补齐 viewArea/dml-files-view/list flex 收缩链，切换页签不再复用 conversation scrollBody 的底部位置；按 workspace+directory 双帧恢复 scrollTop |
+| 0.8.3 | 收窄文件 viewArea CSS 作用域：仅文件页签挂载 `dml-files-view-area`，修复误伤对话页滚动 |
 
 ## 发布与单源约定
 
