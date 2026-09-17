@@ -17,8 +17,11 @@
   的 `require`，不算包依赖。
 - **发布**：`dsh.bundle.patch`（`cordis.patch.yml`）声明 bundle 行，安装即
   注册 profile bundle 层，免手工 insert；bundle 注册是冷路径（首次需重启）。
-  唯一源码在 PCAgent 仓库 `agents/dsh/plugins/mobile-layout/`，GitHub 是发布面
-  （`agents/dsh/scripts/dsh_mobile_layout_publish.sh` subtree split + force push）。
+  本仓库 `crwsr124/dsh-mobile-layout` 是插件的独立 Git 仓库（源码、历史、
+  README 均在此维护），以 submodule 挂在 PCAgent
+  `agents/dsh/plugins/mobile-layout/`；发布 = 本仓库内 commit + 普通
+  fast-forward push（安全入口
+  `agents/dsh/scripts/dsh_plugin_publish.sh mobile-layout`，禁止 force push）。
 
 ## 控制器清单（client 半）
 
@@ -209,13 +212,15 @@ dsh 0.1.5 内置工作区文件能力（`workspace-files` + `file-upload` +
 | 0.9.0 | dsh 0.1.5 移动端回归：移除文件页签（浏览交 0.1.5 内置），host 半只保留 `/mobile-files/download`；新增 `filesDownloadController` 给内置右栏文件行与文档预览头注入下载入口；修复玻璃/半透明皮肤下新右栏列（`_rightbarCol`）无磨砂导致的面板透明 |
 | 0.9.1 | **恢复上传**（它不是文件浏览器的一部分）：工具栏「上传」维持 `<workspace>/upload` 原语义，目录行新增「上传到此目录」（`dir` 参数）；host 半恢复 `POST /mobile-files/upload` 并补 `dir` 校验（越界 403 / 不存在 404 / 非目录 400）；新增 `filesUploadController` 与 `.dml-ul*` 样式，与下载按钮同款 |
 
-## 发布与单源约定
+## 发布与仓库结构
 
-- 唯一源码 = PCAgent 仓库 `agents/dsh/plugins/mobile-layout/`；GitHub 仓库
-  `crwsr124/dsh-mobile-layout` 是发布面，历史由
-  `agents/dsh/scripts/dsh_mobile_layout_publish.sh` 重建（subtree split + force push
-  到 `refs/heads/main`——空仓库首次建分支需完整 refspec）。
-- **subtree split 只取已提交内容**：改完必须先 `git commit` 再跑脚本。
+- 源码仓库 = 本仓库 `crwsr124/dsh-mobile-layout`（独立 Git 仓库），以 submodule
+  挂在 PCAgent `agents/dsh/plugins/mobile-layout/`；PCAgent 只记录 submodule 指针。
+- 发布 = 在本仓库内 `git commit` + 普通 fast-forward push（**禁止 force push**）。
+  安全入口（检查工作区干净 / 分支为 main / 不落后远端，绝不 force）：
+  `agents/dsh/scripts/dsh_plugin_publish.sh mobile-layout`。旧的
+  PCAgent subtree split + force push 方式已废弃（`dsh_mobile_layout_publish.sh` 已删除）。
+- 未提交内容不会进仓库：改完先 `git commit` 再 push。
 - GitHub 图片经 camo 代理**按 URL 永久缓存**：改图必须给 img src 加版本
   查询参数（`docs/banner-*.gif?v=N`）。
 - npm 未发布（装命令为 `dsh plugin add github:crwsr124/dsh-mobile-layout`）；
