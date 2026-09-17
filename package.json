@@ -1,54 +1,54 @@
 {
-  "name": "dsh-mobile-layout",
-  "version": "0.8.3",
-  "description": "Mobile experience suite for the DeepSeek Harness web UI — responsive reading layout, composable glass skinning, workspace-scoped file browsing/upload, and session-state healing. Zero package dependencies.",
-  "type": "module",
-  "main": "lib/index.js",
-  "exports": {
-    ".": {
-      "default": "./lib/index.js"
-    },
-    "./client": {
-      "default": "./lib/client.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "lib/index.js",
-    "lib/client.js",
-    "cordis.patch.yml"
-  ],
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/crwsr124/dsh-mobile-layout.git"
-  },
-  "homepage": "https://github.com/crwsr124/dsh-mobile-layout#readme",
-  "bugs": {
-    "url": "https://github.com/crwsr124/dsh-mobile-layout/issues"
-  },
-  "keywords": [
-    "dsh",
-    "deepseek-harness",
-    "mobile",
-    "skin",
-    "theme",
-    "aurora",
-    "glass",
-    "upload",
-    "dsh-plugin"
-  ],
-  "dsh": {
-    "client": {
-      "platform": "web",
-      "inject": [
-        "slots",
-        "theme"
-      ],
-      "immediately": true
-    },
-    "bundle": {
-      "patch": "./cordis.patch.yml"
-    }
-  }
+	"name": "dsh-mobile-layout",
+	"version": "0.9.6",
+	"description": "Mobile experience suite for the DeepSeek Harness web UI — responsive reading layout, composable glass skinning, download affordances for the built-in 0.1.5 files sidebar, and session-state healing. Zero package dependencies.",
+	"type": "module",
+	"main": "lib/index.js",
+	"exports": {
+		".": {
+			"default": "./lib/index.js"
+		},
+		"./client": {
+			"default": "./lib/client.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"lib/index.js",
+		"lib/client.js",
+		"cordis.patch.yml"
+	],
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/crwsr124/dsh-mobile-layout.git"
+	},
+	"homepage": "https://github.com/crwsr124/dsh-mobile-layout#readme",
+	"bugs": {
+		"url": "https://github.com/crwsr124/dsh-mobile-layout/issues"
+	},
+	"keywords": [
+		"dsh",
+		"deepseek-harness",
+		"mobile",
+		"skin",
+		"theme",
+		"aurora",
+		"glass",
+		"dsh-plugin"
+	],
+	"dsh": {
+		"client": {
+			"platform": "web",
+			"inject": [
+				"slots",
+				"theme",
+				"sessions"
+			],
+			"immediately": true
+		},
+		"bundle": {
+			"patch": "./cordis.patch.yml"
+		}
+	}
 }

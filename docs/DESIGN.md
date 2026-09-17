@@ -4,11 +4,12 @@
 
 ## 架构
 
-- **host 半**（`lib/index.js`，零 @deepseek-ai 依赖）：注册文件路由
-  `GET /mobile-files/list|read?path=<绝对路径>` 与
-  `POST /mobile-files/upload?name=<文件名>&dir=<目标目录>`（v23/v24）。`webServer` 经
-  `ctx.inject` **可选注入**——没有 web 服务的 profile 也能加载插件（文件
-  浏览器/上传降级）。row 本身也负责让包出现在 host Loader 中，
+- **host 半**（`lib/index.js`，零 @deepseek-ai 依赖）：注册两条文件路由
+  `GET /mobile-files/download?sessionId=&path=<绝对路径>` 与
+  `POST /mobile-files/upload?sessionId=&name=<名>[&dir=<绝对路径>]`（list/read
+  已随文件浏览器退役并从代码移除；upload 于 0.9.1 恢复，`dir` 供目录行按钮用）。`webServer` 经
+  `ctx.inject` **可选注入**——没有 web 服务的 profile 也能加载插件（下载
+  挂接降级）。row 本身也负责让包出现在 host Loader 中，
   client-modules 注册表据此发现 `dsh.client` 半。
 - **client 半**（`lib/client.js`，手写 `window.__ModuleLoader__.load({id,
   factory})` CJS-factory 格式，零依赖）：注入一段响应式 CSS + 若干控制器
@@ -16,8 +17,8 @@
   的 `require`，不算包依赖。
 - **发布**：`dsh.bundle.patch`（`cordis.patch.yml`）声明 bundle 行，安装即
   注册 profile bundle 层，免手工 insert；bundle 注册是冷路径（首次需重启）。
-  唯一源码在 PCAgent 仓库 `tools/dsh-mobile-layout/`，GitHub 是发布面
-  （`tools/dsh_mobile_layout_publish.sh` subtree split + force push）。
+  唯一源码在 PCAgent 仓库 `agents/dsh/plugins/mobile-layout/`，GitHub 是发布面
+  （`agents/dsh/scripts/dsh_mobile_layout_publish.sh` subtree split + force push）。
 
 ## 控制器清单（client 半）
 
@@ -27,8 +28,8 @@
 | `whaleButtonController` | <1024px | 固定定位鲸鱼按钮（官方 FishLogo 路径内联，z38 在抽屉 z40 之下），经 `ctx.layout.toggleSidebar()` 软依赖开抽屉；frame `data-sidebar-collapsed` 属性观察器同步淡出 |
 | `composerAutoHideController` | <1024px | 滚动上滑或选择已有会话收起输入框（64px 滞回带、聚焦保护、两段式 display:none 释放空间）；页面初始化只判定一次：恢复到 `active` 已有会话时默认收起并拦截 autofocus，初始 `hero` 则保持可见且取消后续首次消息误收起；点击“新会话”时预恢复，并监听稳定属性 `data-phase=hero` 在异步切换完成后再次恢复；点击消息文字显示并聚焦；matchMedia 门控 + 切回桌面自动恢复 |
 | `skinController` | 全端（功能） | 极光玻璃皮肤 + 文字对比度强制 + token 覆盖，见下节 |
-| `filesViewController` | 全端（功能） | `conversation.view` 插槽第三个页签；vanilla 列表/预览逻辑挂进容器 div；监听 `dml-upload-done`，当前目录收到新文件时自动刷新 |
-| `uploadController` | 全端（功能） | 侧边栏「上传文件」按钮（IconPaperclipOutline16，与主题按钮同款式）→ 隐藏多选 input → 逐个 XHR POST（raw body + `?name=`，带进度）→ 固定状态卡反馈；见「文件上传」 |
+| `filesDownloadController` | 全端（功能） | 给 0.1.5 内置右栏文件树的文件行与文档预览头注入「下载到设备」按钮（MutationObserver + `data-dml-*`），走 `/mobile-files/download`；见「0.1.5 适配」 |
+| `filesUploadController` | 全端（功能） | 给 0.1.5 内置文件树的目录行与工具栏注入上传按钮（同一 MutationObserver 体系），共用一个隐藏多选 file input → `POST /mobile-files/upload`；工具栏不带 `dir`（服务端落 `<workspace>/upload`），目录行带 `dir`（落该目录）；成功后点 `[data-files-reload]` 刷新树；见「0.1.5 适配」 |
 | `settingsOverlayEscapeController` | 全端 | 见「设置弹层逃逸」 |
 | drawer dismissal | <1024px | 点遮罩、会话标题主体或新会话收起抽屉；工作区展开、状态/时间和会话操作菜单保持抽屉展开 |
 
@@ -82,38 +83,54 @@ flex 收缩链（`content min-height:0` → `options flex:1; min-height:0`），
 `options` 独立承担 `overflow-y:auto`；否则模型编辑器等长表单只会撑出固定高度
 panel，触摸手势找不到可滚动祖先。滚动区保留 iOS safe-area 底部留白。
 
-## 文件浏览器
+## 0.1.5 适配：下载/上传挂接内置文件面板（0.9.0 下载 / 0.9.1 上传）
 
-- **协议**：所有请求必须带 `sessionId`。`GET /mobile-files/list?sessionId=&path=` 返回
-  `{sessionId, workspaceId, path, root, crumbs, entries[{name,path,dir,hidden,size,mtime}], truncated}`
-  （目录优先排序、2000 条截断）；`GET /mobile-files/read|download?sessionId=&path=` 分别用于预览和流式下载。
-- **工作区跟随**：客户端订阅 `sessions.list`，以会话摘要 `cwd` 作为工作区键。当前 session 变化但 cwd 相同时，只替换请求凭据并保留当前目录；文件页签重挂载直接渲染控制器层缓存，不发新的 list 请求；同时按 `workspace cwd + directory path` 保存并恢复 `.dml-list.scrollTop`，切换会话/页签不改变阅读位置。文件视图和上游 viewArea 形成完整的 `flex:1; min-height:0; overflow:hidden` 收缩链，由列表自身承担滚动，避免复用 conversation scrollBody 的底部位置。只有 cwd 改变才取消旧目录、预览和下载请求、清空缓存并从新工作区根加载。所有异步响应都绑定发起时的工作区键，晚到结果不能覆盖新工作区。
-- **安全**：浏览器不传可信 root。Host 用 `workspaceRegistry.list()` 将 sessionId 解析到已注册 Workspace，并以服务端 canonical path 为唯一根；未知/未绑定 session、跨工作区绝对路径和 symlink 逃逸均拒绝。只读响应 no-store。
-- **SPA fallback 坑**：webServer 对未注册路径回退 index.html（200 +
-  text/html）——client fetch 必须校验 content-type 判断「路由未就绪」
-  （首次安装未重启 web 进程时显示友好提示；上传 XHR 同样校验）。
+dsh 0.1.5 内置工作区文件能力（`workspace-files` + `file-upload` +
+`ui-sidebar-files` / `ui-sidebar-documentpreview` 右侧边栏）。本插件的
+「文件」页签在 0.9.0 退役（浏览交内置），但**上传并非浏览的一部分**，故
+0.9.1 把它恢复为内置面板上的按钮；host 半保留 `GET /mobile-files/download`
+与 `POST /mobile-files/upload`（list/read 路由代码移除；**运行中的 web 进程
+在下次重启前仍挂载旧四动作路由面，属冷路径过渡态**）。
 
-## 文件上传（v23/v24/v25/v26）
+- **下载入口注入**：MutationObserver（150ms debounce）装饰两类锚点——
+  文件树行 `li[data-files-entry="file"][data-files-path="<绝对路径>"]`
+  （树根自带 `data-files-root`）与文档预览头 `[data-textpreview-path][title="<绝对路径>"]`
+  （按钮 `insertBefore` 到 `[data-textpreview-tool="reload"]` 之前）。
+  路径完全取自面板自身 DOM，不复活浏览 UI；行内按钮绝对定位右侧、
+  `li.dml-dl-host` 补 `padding-right` 防止与文件名省略号重叠。
+- **下载链路**：`GET /mobile-files/download?sessionId=&path=` + XHR blob
+  （`data-dml-state=busy/done/fail`，进度写按钮文本）→ objectURL +
+  `a[download]` 派发。sessionId 取 `sessions.list` 快照当前会话，
+  fallback `localStorage["dsh.sessions.current"]`；Host 服务端重新解析
+  工作区根并拒绝越界，会话过期退化为可见报错而非错文件。
+- **清理**：dispose 时移除全部注入按钮、回收 `dml-dl-host`、断开 observer；
+  React 重渲染移除节点后由 observer 重扫补挂（`isConnected` 剪枝防泄漏）。
+- **上传入口注入（0.9.1）**：同一 observer 体系再装饰两类锚点——目录行
+  `li[data-files-entry="directory"][data-files-path]`（按钮带 `data-dml-dir`，
+  样式 `.dml-ul`）与树工具栏（`insertBefore` 到 `[data-files-reload]` 之前，
+  不带 `dir`）。全部按钮共用一个隐藏 `<input type="file" multiple>`
+  （`data-dml-upload-input`，按需创建并在 DOM 中复用）；选毕逐文件 `POST`
+  原始 body（XHR 上传进度写按钮文本 `0%…100%`），成功后延迟 1.2s 复位并
+  点 `[data-files-reload]` 刷新树。
+- **上传安全（host 半）**：`name` 强制单段（拒 `/`、`\`、NUL、控制符、`.`/`..`、
+  >255 字符）；`dir` 必须 realpath 落在会话工作区内且为已存在目录（越界 403、
+  不存在 404、非目录 400）；重名用 `open(…, "wx")` 独占创建、EEXIST 时自动
+  ` (n)`（最多 100 次），**绝不覆盖**；content-length 与流式计数双重大小上限
+  （`config.uploadMaxBytes`，默认 500 MB），超限 413 并清理半截文件。
 
-- **协议**：`POST /mobile-files/upload?sessionId=&name=<单段文件名>`，body 为文件原始字节（不做 multipart；客户端每文件一请求）。成功返回 `{saved, name, size}`（JSON）。
-- **目标目录**：Host 先用 sessionId 解析可信 Workspace 根，再固定落到 `<workspace>/upload`（自动 mkdir；最近存在祖先和最终 realpath 都必须位于该根）。客户端不携带目录；上传任务固定使用开始时的 sessionId，切换工作区不会把后续文件写到另一根。
-- **安全**：文件名强制单段（`/`、`\`、`\0`、控制符、`.`/`..`、>255 字符
-  全拒）；`open(path, "wx")` 原子独占创建——**绝不覆盖**，EEXIST 自动追加
-  ` (n)` 序号（上限 100）；大小上限 `config.uploadMaxBytes`（默认 500MB，
-  手机视频量级）：content-length 快速拒绝 + 流式计数双保险，超限/中断一律
-  unlink 半截文件；无读回通道。
-- **客户端**：XHR（`upload.onprogress` 进度）+ 固定状态卡（头部明示目标
-  目录 / 成功显示落盘完整路径 / 失败显示原因 / 8s 自动收起 / 可手动关闭）；
-  `dml-upload-done` 事件让正停在目标目录的文件页签刷新。**响应映射三态**：
-  ① JSON → host 判决（saved / 错误 message）；② 200 + 非 JSON → SPA
-  fallback（host 半冷，提示重启）；③ 非 200 + 非 JSON → 网关错误——**nginx
-  默认 `client_max_body_size` 仅 1MB，大文件在网关侧就被 413（HTML 页）**，
-  客户端映射为「文件过大，超出网关大小限制」（2026-08-16 用户 19MB 视频
-  三连败实锤：nginx error.log `client intended to send too large body`）。
-  反代部署必须同时放开网关 body 上限并关闭请求缓冲
-  （`client_max_body_size` / `proxy_request_buffering off`）。
-- **认证模型**：路由本身无认证（与只读文件路由一致）——公网部署依赖
-  nginx basic auth 等外部防护，README 已知限制注明。
+### 内置文件面板透明问题（0.9.0 修复，实机归因）
+
+- **现象**：390×844 + 玻璃皮肤下，新右栏文件面板完全透明（会话文字透过
+  面板重叠在文件名上）。
+- **归因**：`P3OORG_panel`（ui-sidebar-right）与 `pI_x6G_frame`（app frame）
+  直接 `background: var(--dsw-alias-bg-base)`；皮肤 token 层把该 token 覆盖为
+  `rgba(255,255,255,0.35)`（inline on body，**不经 style 标签**——移除
+  mobile.css 复测不恢复，中和 token 后恢复 `rgb(255,255,255)` stock 值）。
+  旧玻璃模糊规则只写了 `_sidebarCol/_detailsCol`，新列类是 `_rightbarCol`，
+  全链 backdrop-filter=none → 35% 半透明白无磨砂直达极光背景。
+- **修复**：glass/semi（含 custom 底降档）给 `[class*="_rightbarCol"]`
+  补 backdrop-filter（与 `_detailsCol` 同参数）；设置弹层逃逸控制器对
+  fixed overlay 祖先链的 backdrop-filter 临时置 none 机制自动覆盖新列。
 
 ## 兼容性清单
 
@@ -150,9 +167,9 @@ panel，触摸手势找不到可滚动祖先。滚动区保留 iOS safe-area 底
 
 - 阅读布局/输入框行为全部媒体查询门控（<1024px），且仅在
   `body[data-dsh-mobile-layout-owner="dsh-mobile-layout"]` 下生效；插件启动时只在
-  owner 空闲时认领，卸载时用 CAS 语义释放。检测到其他布局 owner 时文件、上传、
+  owner 空闲时认领，卸载时用 CAS 语义释放。检测到其他布局 owner 时下载挂接、
   换肤和 abort 自愈仍可用。
-- 换肤、文件页签、上传文件、弹层逃逸、abort 自愈为跨端功能（有意为之）；
+- 换肤、下载挂接、弹层逃逸、abort 自愈为跨端功能（有意为之）；
 - 表面 token 由 `theme.overrideTokens()` 分层管理；背景、明暗呈现和布局各自使用
   owner 属性，关闭/卸载仅恢复本插件仍拥有的值，不会清空后写入者状态。边框柔化
   挂在 `body[data-dsh-mobile-skin]` 下。仅 `_overlay/_mask` 显式四边为无条件兼容
@@ -188,12 +205,15 @@ panel，触摸手势找不到可滚动祖先。滚动区保留 iOS safe-area 底
 | 0.8.1 | 同工作区切换会话保留目录缓存，并按 workspace+directory 恢复文件列表滚动位置；跨工作区才回根请求 |
 | 0.8.2 | 文件 view 独立滚动区修复：补齐 viewArea/dml-files-view/list flex 收缩链，切换页签不再复用 conversation scrollBody 的底部位置；按 workspace+directory 双帧恢复 scrollTop |
 | 0.8.3 | 收窄文件 viewArea CSS 作用域：仅文件页签挂载 `dml-files-view-area`，修复误伤对话页滚动 |
+| 0.8.4 | rc.1 客户端服务守卫适配：inject 声明补 `sessions`（未声明服务 `ctx.get()` 拿不到） |
+| 0.9.0 | dsh 0.1.5 移动端回归：移除文件页签（浏览交 0.1.5 内置），host 半只保留 `/mobile-files/download`；新增 `filesDownloadController` 给内置右栏文件行与文档预览头注入下载入口；修复玻璃/半透明皮肤下新右栏列（`_rightbarCol`）无磨砂导致的面板透明 |
+| 0.9.1 | **恢复上传**（它不是文件浏览器的一部分）：工具栏「上传」维持 `<workspace>/upload` 原语义，目录行新增「上传到此目录」（`dir` 参数）；host 半恢复 `POST /mobile-files/upload` 并补 `dir` 校验（越界 403 / 不存在 404 / 非目录 400）；新增 `filesUploadController` 与 `.dml-ul*` 样式，与下载按钮同款 |
 
 ## 发布与单源约定
 
-- 唯一源码 = PCAgent 仓库 `tools/dsh-mobile-layout/`；GitHub 仓库
+- 唯一源码 = PCAgent 仓库 `agents/dsh/plugins/mobile-layout/`；GitHub 仓库
   `crwsr124/dsh-mobile-layout` 是发布面，历史由
-  `tools/dsh_mobile_layout_publish.sh` 重建（subtree split + force push
+  `agents/dsh/scripts/dsh_mobile_layout_publish.sh` 重建（subtree split + force push
   到 `refs/heads/main`——空仓库首次建分支需完整 refspec）。
 - **subtree split 只取已提交内容**：改完必须先 `git commit` 再跑脚本。
 - GitHub 图片经 camo 代理**按 URL 永久缓存**：改图必须给 img src 加版本
