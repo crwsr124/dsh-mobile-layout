@@ -6,11 +6,13 @@
  *  - 旧「文件」页签与「上传文件」按钮彻底消失（源码无 filesViewController/
  *    uploadController 残留；不注册 conversation.view slot；侧栏动作行只剩
  *    「主题与背景」；CSS 无 dml-upload-status / dml-crumbs / dml-files-view / dml-md）；
- *  - filesDownloadController：对 0.1.5 内置右栏面板 DOM（li[data-files-entry="file"]
- *    [data-files-path] 行 + [data-textpreview-path][title] 预览头）注入下载入口，
- *    点击发起 GET /mobile-files/download?sessionId=…&path=…（XHR 进度 → blob →
- *    a[download] 触发下载），sessionId 优先 sessions 服务、fallback localStorage；
- *  - dispose 清理：注入按钮全部移除、dml-dl-host 类回收、observer 断开；
+ *  - filesDownloadController（0.9.7 起仅预览头单入口）：只对
+ *    [data-textpreview-path] 预览头注入下载按钮（文件树行不再注入），点击发起
+ *    GET /mobile-files/download?sessionId=…&path=…（XHR 进度 → blob → a[download]
+ *    触发下载），sessionId 优先 sessions 服务、fallback localStorage；路径只取
+ *    绝对路径（title 绝对值优先，缺失时回退 树 root + 目录/文件名 重建），且
+ *    捕获路径与当前绝对路径失配时重装饰自愈；
+ *  - dispose 清理：注入按钮全部移除、observer 断开；
  *  - 透明修复在案：CSS 含新右栏 _rightbarCol 的玻璃/半透明 backdrop-filter 覆盖。
  *
  * 运行：node test/client-smoke.mjs
@@ -44,6 +46,12 @@ const flushTimers = () => {
 };
 const rafQueue = [];
 const vivified = new Map();
+// 真实 DOM 的 isConnected 沿子树传播；stub 也同步传播，否则「节点被移除后
+// isConnected 仍为 true」会让插件的 stale-entry 清理判断失真（0.9.7 起依赖）。
+function setConnected(node, value) {
+	node.isConnected = value;
+	for (const c of node.children ?? []) setConnected(c, value);
+}
 function makeElement(tag) {
 	const attrs = new Map();
 	const classSet = new Set();
@@ -90,21 +98,21 @@ function makeElement(tag) {
 			}
 		},
 		get innerHTML() { return this._html ?? ""; },
-		appendChild(child) { this.children.push(child); child.parentElement = this; child.isConnected = this.isConnected; return child; },
+		appendChild(child) { this.children.push(child); child.parentElement = this; setConnected(child, this.isConnected); return child; },
 		append(...kids) { for (const k of kids) this.appendChild(k); },
 		insertBefore(child, ref) {
 			const at = ref ? this.children.indexOf(ref) : -1;
 			if (at >= 0) this.children.splice(at, 0, child);
 			else this.children.push(child);
 			child.parentElement = this;
-			child.isConnected = this.isConnected;
+			setConnected(child, this.isConnected);
 			return child;
 		},
 		remove() {
 			const p = this.parentElement;
 			if (p) p.children = p.children.filter((c) => c !== this);
 			this.parentElement = null;
-			this.isConnected = false;
+			setConnected(this, false);
 		},
 		click() { (this._handlers.click ??= []).forEach((h) => h({ stopPropagation() {}, preventDefault() {} })); },
 		addEventListener(type, handler) { (this._handlers[type] ??= []).push(handler); },
@@ -416,17 +424,19 @@ walkLabels(actionsRow);
 assert.ok(labels.includes("主题与背景"), "「主题与背景」按钮保留");
 assert.ok(!labels.includes("上传文件"), "「上传文件」按钮必须消失，实际: " + JSON.stringify(labels));
 
-// ---------- 5. 首轮扫描即注入下载入口 ----------
-assert.ok(li.classList.contains("dml-dl-host"), "文件行必须带 dml-dl-host（右侧留白）");
-assert.equal(li.children.length, 2, "文件行 = 原始行按钮 + 注入下载按钮");
-const dlBtn = li.children[1];
-assert.equal(dlBtn.getAttribute("data-dml-download"), "", "下载按钮必须带 data-dml-download");
-assert.equal(dlBtn.getAttribute("data-dml-path"), FILE_PATH, "下载按钮必须携带面板 DOM 中的绝对路径");
-assert.equal(dlBtn.getAttribute("aria-label"), "下载到设备");
+// ---------- 5. 首轮扫描：文件树行不注入；预览头注入唯一下载按钮 ----------
+assert.ok(!li.classList.contains("dml-dl-host"), "文件树行不得带 dml-dl-host（0.9.7 移除行内下载）");
+assert.equal(li.children.length, 1, "文件树行保持原始单按钮，不注入下载按钮");
+assert.ok(!li.querySelector("[data-dml-download]"), "文件树行内不得有 data-dml-download");
+assert.equal(li.querySelectorAll("[data-dml-download]").length, 0, "树行下载按钮必须为空");
 const hasDlMark = (c) => c.getAttribute && c.getAttribute("data-dml-download") !== null;
 const headerDl = header.children.find(hasDlMark);
 assert.ok(headerDl, "预览头必须注入下载按钮");
 assert.equal(header.children.indexOf(headerDl), header.children.indexOf(reloadBtn) - 1, "预览头下载按钮应插在刷新工具之前");
+const dlBtn = headerDl;
+assert.equal(dlBtn.getAttribute("data-dml-download"), "", "下载按钮必须带 data-dml-download");
+assert.equal(dlBtn.getAttribute("data-dml-path"), FILE_PATH, "下载按钮必须携带预览头 title 的绝对路径");
+assert.equal(dlBtn.getAttribute("aria-label"), "下载到设备");
 
 // ---------- 6. 点击 → /mobile-files/download + 进度 + blob 下载链路 ----------
 dlBtn.click();
@@ -436,7 +446,7 @@ assert.equal(xhr.method, "GET");
 assert.equal(xhr.url.split("?")[0], "/mobile-files/download");
 const q = new URLSearchParams(xhr.url.split("?")[1]);
 assert.equal(q.get("sessionId"), SESSION_ID, "sessionId 必须来自 sessions 服务快照");
-assert.equal(q.get("path"), FILE_PATH, "path 必须来自面板 data-files-path");
+assert.equal(q.get("path"), FILE_PATH, "path 必须来自预览头 title 的绝对路径");
 assert.equal(dlBtn.getAttribute("data-dml-state"), "busy");
 const xhrCountAfterFirstClick = xhrLog.length;
 dlBtn.click();
@@ -530,10 +540,70 @@ flushTimers();
 assert.equal(toolbarUl.getAttribute("data-dml-state"), null, "失败提示必须自动复位");
 assert.equal(reloadClicks, 2, "失败不得触发刷新");
 
+// ---------- 7c. 路径来源：只取绝对路径 + 失配自愈 ----------
+// (a) title 非绝对（相对路径）→ 用 树 root + 相对路径 重建绝对路径
+const headerB = makeElement("div");
+headerB.className = "dhJKeW_header";
+const pathElB = makeElement("div");
+pathElB.setAttribute("data-textpreview-path", "");
+pathElB.setAttribute("title", "sub/dir/deep.txt"); // 相对路径（0.9.6 bug 形态）
+const dirSpanB = makeElement("span");
+dirSpanB.className = "x_pathDirectory";
+dirSpanB.textContent = "sub/dir/";
+const nameSpanB = makeElement("span");
+nameSpanB.className = "x_pathName";
+nameSpanB.textContent = "deep.txt";
+pathElB.appendChild(dirSpanB);
+pathElB.appendChild(nameSpanB);
+const reloadB = makeElement("button");
+reloadB.setAttribute("data-textpreview-tool", "reload");
+headerB.appendChild(pathElB);
+headerB.appendChild(reloadB);
+body.appendChild(headerB);
+fireMutations();
+flushTimers();
+const dlB = headerB.children.find(hasDlMark);
+assert.ok(dlB, "相对 title 的预览头也必须注入下载按钮");
+assert.equal(dlB.getAttribute("data-dml-path"), "/ws/sub/dir/deep.txt", "相对 title 必须经 树 root 重建为绝对路径");
+
+// (b) 捕获路径失配 → 重装饰自愈（触发 previewPathOf 解析结果变化即重装饰；
+//     DOM-stub 无真实 attribute 观察者回调，手动跑一轮等价于观察器触发后的扫描）
+pathElB.setAttribute("title", "/ws/other/new.txt");
+fireMutations();
+flushTimers();
+const dlB2 = headerB.children.find(hasDlMark);
+assert.ok(dlB2, "自愈后预览头仍有下载按钮");
+assert.equal(dlB2.getAttribute("data-dml-path"), "/ws/other/new.txt", "失配时必须重装饰为最新绝对路径");
+assert.equal(headerB.children.filter(hasDlMark).length, 1, "自愈不得产生重复按钮");
+
+// (c) title 为空 → 回退 目录/文件名 span 重建
+const headerC = makeElement("div");
+headerC.className = "dhJKeW_header";
+const pathElC = makeElement("div");
+pathElC.setAttribute("data-textpreview-path", "");
+const dirSpanC = makeElement("span");
+dirSpanC.className = "x_pathDirectory";
+dirSpanC.textContent = "/ws/docs/";
+const nameSpanC = makeElement("span");
+nameSpanC.className = "x_pathName";
+nameSpanC.textContent = "readme.md";
+pathElC.appendChild(dirSpanC);
+pathElC.appendChild(nameSpanC);
+const reloadC = makeElement("button");
+reloadC.setAttribute("data-textpreview-tool", "reload");
+headerC.appendChild(pathElC);
+headerC.appendChild(reloadC);
+body.appendChild(headerC);
+fireMutations();
+flushTimers();
+const dlC = headerC.children.find(hasDlMark);
+assert.ok(dlC, "空 title 时也必须注入下载按钮");
+assert.equal(dlC.getAttribute("data-dml-path"), "/ws/docs/readme.md", "空 title 时必须回退 目录/文件名 重建绝对路径");
+headerB.remove();
+headerC.remove();
+
 // ---------- 8. dispose 清理 ----------
 for (const d of disposers.splice(0)) d();
-assert.ok(!li.classList.contains("dml-dl-host"), "dispose 必须回收 dml-dl-host 类");
-assert.ok(!li.children.includes(dlBtn), "dispose 必须移除行内下载按钮");
 assert.ok(!header.children.includes(headerDl), "dispose 必须移除预览头下载按钮");
 assert.ok(observers.every((o) => o.disconnected), "dispose 必须断开全部 observer");
 assert.ok(!dirLi.classList.contains("dml-ul-host"), "dispose 必须回收 dml-ul-host 类");
@@ -546,14 +616,14 @@ store.set("dsh.sessions.current", JSON.stringify("session-ls-42"));
 observers.length = 0;
 const exports2 = captured.factory((name) => (name === "react" ? fakeReact : primitives));
 exports2.apply(makeCtx({ sessions: null }));
-const dlBtn2 = li.children.find(hasDlMark);
+const dlBtn2 = header.children.find(hasDlMark);
 assert.ok(dlBtn2, "服务缺席时仍必须注入下载按钮（挂载即扫描）");
 assert.equal(dlBtn2.getAttribute("data-dml-path"), FILE_PATH);
 fireMutations();
 flushTimers();
 fireMutations();
 flushTimers();
-assert.equal(li.children.filter(hasDlMark).length, 1, "重复扫描不得产生重复按钮");
+assert.equal(header.children.filter(hasDlMark).length, 1, "重复扫描不得产生重复按钮");
 dlBtn2.click();
 const xhr3 = xhrLog[xhrLog.length - 1];
 assert.equal(new URLSearchParams(xhr3.url.split("?")[1]).get("sessionId"), "session-ls-42", "sessionId 必须 fallback 到 localStorage 当前会话");
