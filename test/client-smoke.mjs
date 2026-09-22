@@ -11,8 +11,13 @@
  *    优先取预览根 data-textpreview-url（contentId，dsh-resource://file/…）经
  *    parseFileAddress + 工作区根化为绝对路径，其次回退 title 绝对值；定不出
  *    绝对路径时移除按钮（绝不留会下错文件的旧按钮）。点击发起
- *    GET /mobile-files/download?sessionId=…&path=…（XHR 进度 → blob → a[download]
- *    触发下载），sessionId 优先 sessions 服务、fallback localStorage；
+ *    GET /mobile-files/download?sessionId=…&path=…，sessionId 优先取 contentId
+ *    里的会话（跨会话预览）、fallback sessions 服务/localStorage；桌面走
+ *    XHR 进度 → blob → a[download]，**0.9.9 起移动端改走同源导航式下载**
+ *    （attachment 响应交给浏览器下载管理器，规避 iOS blob 保存不可靠）；
+ *  - 复制路径按钮（0.9.9）：预览头 reload 左侧新增，与下载按钮共用同一路径
+ *    解析（永不可能不一致），点击 clipboard.writeText(绝对路径)，失败回退
+ *    textarea+execCommand('copy')，复用 data-dml-state 状态机（已复制/失败）；
  *  - filesUploadController（0.9.8）：目录行上传按钮只在文件夹展开
  *    （aria-expanded=true）时出现、锚定到行元素 [class*='_row']（不再相对整个
  *    li 定位，消除展开后飘移）；收起即移除；树工具栏「上传文件」入口不变；
@@ -119,6 +124,8 @@ function makeElement(tag) {
 			setConnected(this, false);
 		},
 		click() { (this._handlers.click ??= []).forEach((h) => h({ stopPropagation() {}, preventDefault() {} })); },
+		select() { this._selected = true; },
+		setSelectionRange() {},
 		addEventListener(type, handler) { (this._handlers[type] ??= []).push(handler); },
 		removeEventListener(type, handler) {
 			this._handlers[type] = (this._handlers[type] ?? []).filter((h) => h !== handler);
@@ -294,6 +301,24 @@ const realCreateObjectURL = globalThis.URL.createObjectURL;
 const realRevokeObjectURL = globalThis.URL.revokeObjectURL;
 globalThis.URL.createObjectURL = () => "blob:fake-url";
 globalThis.URL.revokeObjectURL = () => {};
+// clipboard + legacy copy stubs (0.9.9 复制路径)
+const clipboardCalls = [];
+let clipboardMode = "ok"; // "ok" | "reject" | "absent"
+Object.defineProperty(globalThis.navigator ?? globalThis, "clipboard", {
+	configurable: true,
+	get: () => clipboardMode === "absent" ? undefined : {
+		writeText: (t) => {
+			clipboardCalls.push(t);
+			return clipboardMode === "reject" ? Promise.reject(new Error("denied")) : Promise.resolve();
+		}
+	}
+});
+let execCommandCalls = 0;
+let execCommandResult = true;
+globalThis.document.execCommand = (cmd) => { if (cmd === "copy") { execCommandCalls++; return execCommandResult; } return false; };
+// matchMedia switch for the mobile navigation-download branch (0.9.9)
+let mobileViewport = false;
+globalThis.window.matchMedia = (q) => ({ matches: mobileViewport && /max-width:\s*1023/.test(q), addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} });
 
 // ---------- 2. module load ----------
 let captured = null;
@@ -477,6 +502,72 @@ xhr2.onload();
 assert.equal(dlBtn.getAttribute("data-dml-state"), "fail", "非 200 必须进入 fail 态");
 flushTimers();
 assert.equal(dlBtn.getAttribute("data-dml-state"), null, "失败提示必须自动复位");
+
+// ---------- 7a. 复制路径按钮（0.9.9）：与下载同源、点复制、失败回退 ----------
+const hasCpMark = (c) => c.getAttribute && c.getAttribute("data-dml-copy") !== null;
+const cpBtn = header.children.find(hasCpMark);
+assert.ok(cpBtn, "预览头必须注入复制路径按钮");
+assert.equal(cpBtn.getAttribute("data-dml-path"), FILE_PATH, "复制按钮路径必须与下载同源（同一解析结果）");
+assert.equal(cpBtn.getAttribute("data-dml-path"), dlBtn.getAttribute("data-dml-path"), "复制与下载的 data-dml-path 必须完全一致");
+assert.equal(header.children.indexOf(cpBtn), header.children.indexOf(dlBtn) - 1, "复制按钮必须位于下载按钮之前");
+assert.equal(cpBtn.getAttribute("aria-label"), "复制路径");
+// 点击 → clipboard.writeText(绝对路径) → 已复制 → 复位
+clipboardCalls.length = 0;
+clipboardMode = "ok";
+cpBtn.click();
+await new Promise((r) => setImmediate(r));
+assert.equal(clipboardCalls.length, 1, "点击必须调用一次 clipboard.writeText");
+assert.equal(clipboardCalls[0], FILE_PATH, "复制内容必须是当前预览文件的绝对路径");
+assert.equal(cpBtn.getAttribute("data-dml-state"), "done", "复制成功必须进入 done 态");
+assert.equal(cpBtn.textContent, "已复制");
+flushTimers();
+assert.equal(cpBtn.getAttribute("data-dml-state"), null, "复制成功提示必须自动复位");
+// clipboard 拒绝 → execCommand 回退 → 成功
+clipboardMode = "reject";
+execCommandCalls = 0;
+execCommandResult = true;
+cpBtn.click();
+await new Promise((r) => setImmediate(r));
+await new Promise((r) => setImmediate(r));
+assert.equal(execCommandCalls, 1, "clipboard 拒绝后必须回退 execCommand('copy')");
+assert.equal(cpBtn.getAttribute("data-dml-state"), "done", "execCommand 回退成功也进入 done 态");
+flushTimers();
+// clipboard 拒绝 + execCommand 失败 → 失败态
+clipboardMode = "reject";
+execCommandResult = false;
+cpBtn.click();
+await new Promise((r) => setImmediate(r));
+await new Promise((r) => setImmediate(r));
+assert.equal(cpBtn.getAttribute("data-dml-state"), "fail", "两种复制都失败必须进入 fail 态");
+assert.equal(cpBtn.textContent, "失败");
+flushTimers();
+assert.equal(cpBtn.getAttribute("data-dml-state"), null, "复制失败提示必须自动复位");
+// clipboard API 缺席（非安全上下文）→ 直接走 execCommand
+clipboardMode = "absent";
+execCommandCalls = 0;
+execCommandResult = true;
+cpBtn.click();
+await new Promise((r) => setImmediate(r));
+assert.equal(execCommandCalls, 1, "clipboard API 缺席时必须直接用 execCommand");
+flushTimers();
+clipboardMode = "ok";
+
+// ---------- 7a2. 移动端导航式下载（0.9.9）：窄视口改走 attachment 导航 ----------
+mobileViewport = true;
+const xhrBeforeMobile = xhrLog.length;
+const anchorsBefore = body.children.filter((c) => c.tagName === "A").length;
+dlBtn.click();
+await new Promise((r) => setImmediate(r));
+assert.equal(xhrLog.length, xhrBeforeMobile, "移动端不得走 XHR blob（改导航式下载）");
+const navAnchor = body.children.filter((c) => c.tagName === "A").pop();
+assert.ok(navAnchor, "移动端必须创建一个 <a> 触发导航下载");
+assert.ok(navAnchor !== undefined && body.children.filter((c) => c.tagName === "A").length > anchorsBefore, "导航锚点必须挂到 body");
+assert.ok(navAnchor.href.includes("/mobile-files/download?"), "导航目标必须是 download 路由");
+assert.ok(navAnchor.hasAttribute("download"), "导航锚点必须带 download 属性（服务端 attachment 文件名生效）");
+assert.ok(navAnchor.href.includes("sessionId=" + SESSION_ID), "导航 URL 必须带 sessionId");
+assert.equal(dlBtn.getAttribute("data-dml-state"), "done", "导航式下载点击进入 done 态");
+flushTimers();
+mobileViewport = false;
 
 // ---------- 7b. 上传入口（0.9.1 恢复：目录行 + 工具栏；0.9.8 起目录行=展开+锚定行）----------
 // dirLi 的 aria-expanded 在 fixture 里是 false → 首轮扫描不应注入
