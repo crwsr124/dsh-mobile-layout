@@ -12,9 +12,11 @@
  *    parseFileAddress + 工作区根化为绝对路径，其次回退 title 绝对值；定不出
  *    绝对路径时移除按钮（绝不留会下错文件的旧按钮）。点击发起
  *    GET /mobile-files/download?sessionId=…&path=…，sessionId 优先取 contentId
- *    里的会话（跨会话预览）、fallback sessions 服务/localStorage；桌面走
- *    XHR 进度 → blob → a[download]，**0.9.9 起移动端改走同源导航式下载**
- *    （attachment 响应交给浏览器下载管理器，规避 iOS blob 保存不可靠）；
+ *    里的会话（跨会话预览）、fallback sessions 服务/localStorage；**0.9.10 起
+ *    全端统一 XHR + blob → a[download]**（带会话 Cookie、真实进度、状态机复位；
+ *    0.9.9 的移动端导航式下载被 Android 厂商下载管理器接管后脱离页面上下文、
+ *    不带 Cookie → 401，已移除）；文件名取自响应头 Content-Disposition（RFC5987
+ *    非 ASCII 保真，getAllResponseHeaders 大小写不敏感解析）；
  *  - 复制路径按钮（0.9.9）：预览头 reload 左侧新增，与下载按钮共用同一路径
  *    解析（永不可能不一致），点击 clipboard.writeText(绝对路径)，失败回退
  *    textarea+execCommand('copy')，复用 data-dml-state 状态机（已复制/失败）；
@@ -552,22 +554,46 @@ assert.equal(execCommandCalls, 1, "clipboard API 缺席时必须直接用 execCo
 flushTimers();
 clipboardMode = "ok";
 
-// ---------- 7a2. 移动端导航式下载（0.9.9）：窄视口改走 attachment 导航 ----------
-mobileViewport = true;
+// ---------- 7a2. 全端统一 XHR+blob + Content-Disposition 文件名（0.9.10）----------
+// 0.9.9 的「移动端导航式下载」被 Android 厂商下载管理器接管后脱离页面上下文、
+// 不带会话 Cookie → 401；0.9.10 起移动端与桌面统一走 XHR+blob（带 Cookie、
+// 真实进度、状态机复位），文件名从响应头 Content-Disposition 解析。
+mobileViewport = true; // 视口标志保留但不再分流（验证移动端也走 XHR）
 const xhrBeforeMobile = xhrLog.length;
-const anchorsBefore = body.children.filter((c) => c.tagName === "A").length;
 dlBtn.click();
+const mobileXhr = xhrLog[xhrLog.length - 1];
+assert.ok(xhrLog.length > xhrBeforeMobile, "移动端也必须走 XHR+blob（0.9.10 统一）");
+assert.equal(mobileXhr.method, "GET");
+assert.ok(mobileXhr.url.startsWith("/mobile-files/download?"), "移动端必须打到 download 路由");
+assert.ok(mobileXhr.url.includes("sessionId=" + SESSION_ID), "XHR 必须带 sessionId（含会话 Cookie）");
+assert.equal(dlBtn.getAttribute("data-dml-state"), "busy", "XHR 进行中必须是 busy（有进度）");
+// 服务端给 RFC5987 文件名（非 ASCII）→ 按钮取 Content-Disposition 而非 baseName
+mobileXhr.getAllResponseHeaders = () => "content-type: application/octet-stream\r\nContent-Disposition: attachment; filename*=UTF-8''%E5%8E%9F%E5%A7%8B_%E5%AF%B9%E6%AF%94.jpg\r\n";
+mobileXhr.status = 200;
+mobileXhr.response = new Blob(["x"]);
+mobileXhr.onload();
 await new Promise((r) => setImmediate(r));
-assert.equal(xhrLog.length, xhrBeforeMobile, "移动端不得走 XHR blob（改导航式下载）");
-const navAnchor = body.children.filter((c) => c.tagName === "A").pop();
-assert.ok(navAnchor, "移动端必须创建一个 <a> 触发导航下载");
-assert.ok(navAnchor !== undefined && body.children.filter((c) => c.tagName === "A").length > anchorsBefore, "导航锚点必须挂到 body");
-assert.ok(navAnchor.href.includes("/mobile-files/download?"), "导航目标必须是 download 路由");
-assert.ok(navAnchor.hasAttribute("download"), "导航锚点必须带 download 属性（服务端 attachment 文件名生效）");
-assert.ok(navAnchor.href.includes("sessionId=" + SESSION_ID), "导航 URL 必须带 sessionId");
-assert.equal(dlBtn.getAttribute("data-dml-state"), "done", "导航式下载点击进入 done 态");
+const savedLink = body.children[body.children.length - 1];
+assert.equal(savedLink.download, "原始_对比.jpg", "文件名必须来自响应头 Content-Disposition（RFC5987 解码），不是 baseName(path)");
+assert.equal(dlBtn.getAttribute("data-dml-state"), "done", "XHR 200 后必须进入 done 态并复位（不再有永久「下载中」）");
 flushTimers();
+assert.equal(dlBtn.getAttribute("data-dml-state"), null, "完成提示必须自动复位");
 mobileViewport = false;
+// Content-Disposition 解析的大小写不敏感 + fallback 到 filename="…"
+const cdProbe = (headers) => {
+  // 直接调插件内部函数不可达，改走一次完整 XHR 验证
+  dlBtn.click();
+  const x = xhrLog[xhrLog.length - 1];
+  x.getAllResponseHeaders = () => headers;
+  x.status = 200;
+  x.response = new Blob(["y"]);
+  x.onload();
+  return body.children[body.children.length - 1].download;
+};
+assert.equal(cdProbe("content-disposition: attachment; filename*=UTF-8''plain.txt"), "plain.txt", "小写 content-disposition 头也要解析");
+assert.equal(cdProbe('Content-Disposition: attachment; filename="quoted name.txt"'), "quoted name.txt", "无 filename* 时回退 filename=\"…\"");
+assert.equal(cdProbe("content-type: application/octet-stream"), "sample.txt", "无 Content-Disposition 时回退 baseName(path)");
+flushTimers();
 
 // ---------- 7b. 上传入口（0.9.1 恢复：目录行 + 工具栏；0.9.8 起目录行=展开+锚定行）----------
 // dirLi 的 aria-expanded 在 fixture 里是 false → 首轮扫描不应注入
