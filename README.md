@@ -16,7 +16,14 @@ DeepSeek Harness Web UI 移动端体验套件：让 dsh web 在手机上好看�
 > Cookie、有真实进度），文件名改从响应头 `Content-Disposition` 解析
 > （RFC5987 中文保真）。上传的工具栏入口不变：目录行上传到该目录、工具栏
 > 上传到工作区 `upload/`。同时修复手机视口下内置面板在玻璃/半透明皮肤下的
-> 透明问题。
+> 透明问题。**0.9.11 修正 Windows 路径**：在此之前下载与
+> 「上传到此目录」在 Windows 上**一律 400**（`bad-path` / `bad-dir`）——
+> 宿主与客户端都用 POSIX 判据 `startsWith("/")` 认定「绝对路径」，而
+> Windows 工作区根是 `C:\...`；同时拼路径恒用 `/` 会得到 `C:\ws/sub/f.txt`
+> 这类混用分隔符的非法路径。现改用 `node:path.isAbsolute()`（POSIX / 盘符 /
+> UNC 通吃）、按根的分隔符拼接，并在 win32 上按大小写折叠做包含性判定
+> （realpath 保留磁盘大小写，workspace 注册表里的路径大小写可能与磁盘
+> 不一致）。macOS / Linux 行为不变。
 
 ## 功能一览
 
@@ -107,6 +114,9 @@ dsh plugin --profile <name> add github:crwsr124/dsh-mobile-layout
 - **仅移动端**（媒体查询门控）：阅读布局、输入框滚动收起、Session log 隐藏、
   设置面板移动端布局
 - **跨端功能**（有意为之）：换肤、内置文件面板下载/上传挂接、abort 自愈
+- **平台**：POSIX 与 Windows 同等支持（0.9.11 起）。路径校验用
+  `node:path.isAbsolute()`，容器判定在 win32 上大小写折叠；`C:\...`、`C:/...`
+  与 UNC `\\server\share` 均可作为 `path` / `dir` 传入
 - **皮肤关闭 / 卸载插件 = 完全还原 stock 外观**
 
 ## 已知限制

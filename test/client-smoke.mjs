@@ -729,7 +729,44 @@ assert.equal(dlB3.getAttribute("data-dml-path"), "/ws/docs/abs.md", "absolute sc
 previewRootB.remove();
 body.appendChild(treeRoot); // 还原树根供后续用例
 
-// (d) 无 contentId + title 非绝对 → 移除按钮（0.9.7 会留旧按钮 → 下错文件）
+// (d) Windows 工作区（0.9.11）：根为 C:\... 时，session 相对 contentId 必须用反斜杠
+// 拼出真正的 Windows 绝对路径（旧代码用 "/" 拼 + startsWith("/") 判定 → 按钮永不出现）
+const treeRootWin = makeElement("div");
+treeRootWin.setAttribute("data-files-state", "tree");
+treeRootWin.setAttribute("data-files-root", "C:\\ws");
+treeRoot.remove();
+body.appendChild(treeRootWin);
+const headerWin = makeElement("div");
+headerWin.className = "dhJKeW_header";
+const previewRootWin = makeElement("div");
+previewRootWin.className = "x_preview";
+previewRootWin.setAttribute("data-textpreview-url", "dsh-resource://file/session/" + SESSION_ID + "/sub/deep.txt");
+const pathElWin = makeElement("div");
+pathElWin.setAttribute("data-textpreview-path", "");
+const reloadWin = makeElement("button");
+reloadWin.setAttribute("data-textpreview-tool", "reload");
+headerWin.appendChild(pathElWin);
+headerWin.appendChild(reloadWin);
+previewRootWin.appendChild(headerWin);
+body.appendChild(previewRootWin);
+fireMutations();
+flushTimers();
+const dlWin = headerWin.children.find(hasDlMark);
+assert.ok(dlWin, "Windows 工作区根必须仍能注入下载按钮（0.9.10 会因 startsWith('/') 整段失效）");
+assert.equal(dlWin.getAttribute("data-dml-path"), "C:\\ws\\sub\\deep.txt", "Windows 相对路径必须用反斜杠拼绝对路径");
+// title 回退也要认 Windows 绝对路径
+previewRootWin.setAttribute("data-textpreview-url", "not-a-content-id");
+pathElWin.setAttribute("title", "C:\\ws\\fallback.md");
+fireMutations();
+flushTimers();
+const dlWin2 = headerWin.children.find(hasDlMark);
+assert.ok(dlWin2, "Windows 绝对 title 必须被认作绝对路径");
+assert.equal(dlWin2.getAttribute("data-dml-path"), "C:\\ws\\fallback.md", "Windows title 回退必须原样采用");
+previewRootWin.remove();
+treeRootWin.remove();
+body.appendChild(treeRoot);
+
+// (e) 无 contentId + title 非绝对 → 移除按钮（0.9.7 会留旧按钮 → 下错文件）
 const headerC = makeElement("div");
 headerC.className = "dhJKeW_header";
 const pathElC = makeElement("div");

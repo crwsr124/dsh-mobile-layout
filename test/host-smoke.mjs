@@ -28,8 +28,13 @@ try {
 	await writeFile(path.join(outside, "secret.txt"), "outside");
 	await symlink(path.join(root, "dl-test"), path.join(root, "inside-dir"));
 	await symlink(outside, path.join(root, "sneaky-dir"));
-	await symlink("/etc/hosts", path.join(root, "sneaky-file"));
+	await symlink(process.platform === "win32" ? "C:\\Windows\\win.ini" : "/etc/hosts", path.join(root, "sneaky-file"));
 
+	// "Outside the workspace" must be an absolute path that really exists on this
+	// platform, otherwise realpath() throws ENOENT and the route answers 404
+	// (not-found) before the containment check runs. `/etc/hosts` only exists on
+	// POSIX; `C:\Windows\win.ini` is its Windows opposite.
+	const outsideAbs = process.platform === "win32" ? "C:\\Windows\\win.ini" : "/etc/hosts";
 	let registered = null;
 	let capturedDeps = null;
 	const registry = { list: () => [{ sessionIds: ["session-1"], path: root }] };
@@ -118,7 +123,7 @@ try {
 	assert.equal((await call("POST", "/mobile-files/upload?sessionId=session-404&name=x.txt", "x")).status, 403, "未注册会话");
 	assert.equal((await call("POST", "/mobile-files/upload?sessionId=session-1&name=../evil.txt", "x")).status, 400, "name 穿越拒绝");
 	assert.equal((await call("POST", "/mobile-files/upload?sessionId=session-1&name=a%2Fb.txt", "x")).status, 400, "name 含分隔符拒绝");
-	assert.equal((await call("POST", "/mobile-files/upload?sessionId=session-1&name=x.txt&dir=/etc", "x")).status, 403, "dir 工作区外拒绝");
+	assert.equal((await call("POST", `/mobile-files/upload?sessionId=session-1&name=x.txt&dir=${encodeURIComponent(path.dirname(outsideAbs))}`, "x")).status, 403, "dir 工作区外拒绝");
 	assert.equal((await call("POST", `/mobile-files/upload?sessionId=session-1&name=x.txt&dir=${encodeURIComponent(path.join(root, "sneaky-dir"))}`, "x")).status, 403, "dir 符号链接逃逸拒绝");
 	assert.equal((await call("POST", `/mobile-files/upload?sessionId=session-1&name=x.txt&dir=${encodeURIComponent(path.join(root, "nope"))}`, "x")).status, 404, "dir 不存在 → 404");
 	assert.equal((await call("GET", "/mobile-files/upload?sessionId=session-1&name=x.txt")).status, 405, "upload 非 POST 拒绝");
@@ -156,7 +161,7 @@ try {
 	// ---- 越权/边界面 ----
 	assert.equal((await call("GET", "/mobile-files/download?path=%2Fetc%2Fhosts")).status, 400, "缺 sessionId");
 	assert.equal((await call("GET", "/mobile-files/download?sessionId=session-404&path=%2Fetc%2Fhosts")).status, 403, "未注册会话");
-	assert.equal((await call("GET", "/mobile-files/download?sessionId=session-1&path=/etc/hosts")).status, 403, "工作区外路径");
+	assert.equal((await call("GET", `/mobile-files/download?sessionId=session-1&path=${encodeURIComponent(outsideAbs)}`)).status, 403, "工作区外路径");
 	assert.equal((await call("GET", `/mobile-files/download?sessionId=session-1&path=${encodeURIComponent(path.join(root, "sneaky-file"))}`)).status, 403, "符号链接逃逸（文件）");
 	assert.equal((await call("GET", `/mobile-files/download?sessionId=session-1&path=${encodeURIComponent(path.join(root, "sneaky-dir"))}`)).status, 403, "符号链接逃逸（目录）");
 	assert.equal((await call("GET", "/mobile-files/download?sessionId=session-1")).status, 400, "缺 path");
