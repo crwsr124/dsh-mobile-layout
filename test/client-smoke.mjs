@@ -6,12 +6,16 @@
  *  - 旧「文件」页签与「上传文件」按钮彻底消失（源码无 filesViewController/
  *    uploadController 残留；不注册 conversation.view slot；侧栏动作行只剩
  *    「主题与背景」；CSS 无 dml-upload-status / dml-crumbs / dml-files-view / dml-md）；
- *  - filesDownloadController（0.9.7 起仅预览头单入口）：只对
- *    [data-textpreview-path] 预览头注入下载按钮（文件树行不再注入），点击发起
+ *  - filesDownloadController（0.9.7 起仅预览头单入口；0.9.8 路径来源权威化）：
+ *    只对 [data-textpreview-path] 预览头注入下载按钮（文件树行不再注入），路径
+ *    优先取预览根 data-textpreview-url（contentId，dsh-resource://file/…）经
+ *    parseFileAddress + 工作区根化为绝对路径，其次回退 title 绝对值；定不出
+ *    绝对路径时移除按钮（绝不留会下错文件的旧按钮）。点击发起
  *    GET /mobile-files/download?sessionId=…&path=…（XHR 进度 → blob → a[download]
- *    触发下载），sessionId 优先 sessions 服务、fallback localStorage；路径只取
- *    绝对路径（title 绝对值优先，缺失时回退 树 root + 目录/文件名 重建），且
- *    捕获路径与当前绝对路径失配时重装饰自愈；
+ *    触发下载），sessionId 优先 sessions 服务、fallback localStorage；
+ *  - filesUploadController（0.9.8）：目录行上传按钮只在文件夹展开
+ *    （aria-expanded=true）时出现、锚定到行元素 [class*='_row']（不再相对整个
+ *    li 定位，消除展开后飘移）；收起即移除；树工具栏「上传文件」入口不变；
  *  - dispose 清理：注入按钮全部移除、observer 断开；
  *  - 透明修复在案：CSS 含新右栏 _rightbarCol 的玻璃/半透明 backdrop-filter 覆盖。
  *
@@ -474,19 +478,42 @@ assert.equal(dlBtn.getAttribute("data-dml-state"), "fail", "非 200 必须进入
 flushTimers();
 assert.equal(dlBtn.getAttribute("data-dml-state"), null, "失败提示必须自动复位");
 
-// ---------- 7b. 上传入口（0.9.1 恢复：目录行 + 工具栏）----------
-assert.ok(dirLi.classList.contains("dml-ul-host"), "目录行必须带 dml-ul-host（右侧留白）");
-const ulBtn = dirLi.children.find((c) => c.getAttribute && c.getAttribute("data-dml-upload") !== null);
-assert.ok(ulBtn, "目录行必须注入上传按钮");
+// ---------- 7b. 上传入口（0.9.1 恢复：目录行 + 工具栏；0.9.8 起目录行=展开+锚定行）----------
+// dirLi 的 aria-expanded 在 fixture 里是 false → 首轮扫描不应注入
+assert.ok(!dirLi.querySelector("[data-dml-upload]"), "未展开的文件夹行不得有上传按钮（0.9.8）");
+assert.ok(!dirLi.classList.contains("dml-ul-host"), "未展开的文件夹行不得带 dml-ul-host");
+// 展开 → 注入到行元素（DOM-stub 无真实属性观察回调，fireMutations 仅触发回调、
+// scan 走 150ms debounce → 必须 flushTimers）
+dirRowBtn.setAttribute("aria-expanded", "true");
+fireMutations();
+flushTimers();
+assert.ok(dirLi.classList.contains("dml-ul-host"), "展开的目录行必须带 dml-ul-host（右侧留白）");
+const ulBtn = dirRowBtn.querySelector("[data-dml-upload]");
+assert.ok(ulBtn, "展开的目录行必须注入上传按钮");
+assert.equal(ulBtn.parentElement, dirRowBtn, "上传按钮必须挂在行元素（[class*='_row']）而非 li");
 assert.equal(ulBtn.getAttribute("data-dml-dir"), DIR_PATH, "目录行按钮必须携带该目录绝对路径");
 assert.equal(ulBtn.getAttribute("aria-label"), "上传到此目录");
+// 收起 → 移除（0.9.8 新行为）
+dirRowBtn.setAttribute("aria-expanded", "false");
+fireMutations();
+flushTimers();
+assert.ok(!dirLi.querySelector("[data-dml-upload]"), "收起后上传按钮必须移除");
+assert.ok(!dirLi.classList.contains("dml-ul-host"), "收起后必须回收 dml-ul-host");
+// 重新展开供后续上传流程用例
+dirRowBtn.setAttribute("aria-expanded", "true");
+fireMutations();
+flushTimers();
+const ulBtnRow = dirRowBtn.querySelector("[data-dml-upload]");
+assert.ok(ulBtnRow, "重新展开后上传按钮必须恢复");
+// 收起/展开重建了新按钮，后续流程一律用这个引用
+const ulBtnF = ulBtnRow;
 const toolbarUl = toolbar.children.find((c) => c.getAttribute && c.getAttribute("data-dml-upload") !== null);
 assert.ok(toolbarUl, "工具栏必须注入上传按钮（旧「上传文件」入口）");
 assert.equal(toolbarUl.getAttribute("data-dml-dir"), "", "工具栏按钮不带 dir → 服务端解析 <workspace>/upload");
 assert.equal(toolbar.children.indexOf(toolbarUl), toolbar.children.indexOf(treeReload) - 1, "工具栏上传按钮须插在刷新工具之前");
 
 const xhrBeforeUpload = xhrLog.length;
-ulBtn.click();
+ulBtnF.click();
 const uploadInput = body.querySelector("[data-dml-upload-input]");
 assert.ok(uploadInput, "点击必须创建隐藏 file input");
 assert.equal(uploadInput.type, "file");
@@ -505,13 +532,13 @@ assert.equal(uq.get("dir"), DIR_PATH, "目录行按钮必须带 dir");
 assert.equal(upXhr.body.name, "phone photo.jpg", "原始文件体必须交给 send()");
 assert.equal(upXhr.headers["content-type"], "application/octet-stream");
 upXhr.upload.onprogress({ lengthComputable: true, loaded: 6 });
-assert.equal(ulBtn.textContent, "50%", "上传进度必须反映在按钮上");
+assert.equal(ulBtnF.textContent, "50%", "上传进度必须反映在按钮上");
 upXhr.status = 200;
 upXhr.onload();
 await new Promise((r) => setImmediate(r));
-assert.equal(ulBtn.getAttribute("data-dml-state"), "done", "上传成功必须进入 done 态");
+assert.equal(ulBtnF.getAttribute("data-dml-state"), "done", "上传成功必须进入 done 态");
 flushTimers();
-assert.equal(ulBtn.getAttribute("data-dml-state"), null, "成功提示必须自动复位");
+assert.equal(ulBtnF.getAttribute("data-dml-state"), null, "成功提示必须自动复位");
 assert.equal(reloadClicks, 1, "上传成功后必须触发内置树的刷新");
 
 toolbarUl.click();
@@ -540,55 +567,57 @@ flushTimers();
 assert.equal(toolbarUl.getAttribute("data-dml-state"), null, "失败提示必须自动复位");
 assert.equal(reloadClicks, 2, "失败不得触发刷新");
 
-// ---------- 7c. 路径来源：只取绝对路径 + 失配自愈 ----------
-// (a) title 非绝对（相对路径）→ 用 树 root + 相对路径 重建绝对路径
+// ---------- 7c. 路径来源（0.9.8）：contentId 权威 + title 回退 + 定不出即移除 ----------
+// (a) data-textpreview-url（session 相对路径）+ 树根 → 权威绝对路径，title 无关
 const headerB = makeElement("div");
 headerB.className = "dhJKeW_header";
+const previewRootB = makeElement("div");
+previewRootB.className = "x_preview";
+previewRootB.setAttribute("data-textpreview-url", "dsh-resource://file/session/" + SESSION_ID + "/sub/dir/deep.txt");
 const pathElB = makeElement("div");
 pathElB.setAttribute("data-textpreview-path", "");
-pathElB.setAttribute("title", "sub/dir/deep.txt"); // 相对路径（0.9.6 bug 形态）
-const dirSpanB = makeElement("span");
-dirSpanB.className = "x_pathDirectory";
-dirSpanB.textContent = "sub/dir/";
-const nameSpanB = makeElement("span");
-nameSpanB.className = "x_pathName";
-nameSpanB.textContent = "deep.txt";
-pathElB.appendChild(dirSpanB);
-pathElB.appendChild(nameSpanB);
+pathElB.setAttribute("title", "ignored-not-absolute.txt"); // 展示用 title，不采用
 const reloadB = makeElement("button");
 reloadB.setAttribute("data-textpreview-tool", "reload");
 headerB.appendChild(pathElB);
 headerB.appendChild(reloadB);
-body.appendChild(headerB);
+previewRootB.appendChild(headerB);
+body.appendChild(previewRootB);
 fireMutations();
 flushTimers();
 const dlB = headerB.children.find(hasDlMark);
-assert.ok(dlB, "相对 title 的预览头也必须注入下载按钮");
-assert.equal(dlB.getAttribute("data-dml-path"), "/ws/sub/dir/deep.txt", "相对 title 必须经 树 root 重建为绝对路径");
+assert.ok(dlB, "有 contentId 时必须注入下载按钮");
+assert.equal(dlB.getAttribute("data-dml-path"), "/ws/sub/dir/deep.txt", "session 相对 contentId 必须经树根化为绝对路径（不采 title）");
 
-// (b) 捕获路径失配 → 重装饰自愈（触发 previewPathOf 解析结果变化即重装饰；
-//     DOM-stub 无真实 attribute 观察者回调，手动跑一轮等价于观察器触发后的扫描）
-pathElB.setAttribute("title", "/ws/other/new.txt");
+// (b) contentId 变化（切换文件）→ 按钮路径跟随权威来源重装饰
+previewRootB.setAttribute("data-textpreview-url", "dsh-resource://file/session/" + SESSION_ID + "/other/new.md");
+pathElB.setAttribute("title", "/ws/other/new.md");
 fireMutations();
 flushTimers();
 const dlB2 = headerB.children.find(hasDlMark);
-assert.ok(dlB2, "自愈后预览头仍有下载按钮");
-assert.equal(dlB2.getAttribute("data-dml-path"), "/ws/other/new.txt", "失配时必须重装饰为最新绝对路径");
-assert.equal(headerB.children.filter(hasDlMark).length, 1, "自愈不得产生重复按钮");
+assert.ok(dlB2, "切换文件后仍有下载按钮");
+assert.equal(dlB2.getAttribute("data-dml-path"), "/ws/other/new.md", "contentId 变化后按钮必须指向新文件");
+assert.equal(headerB.children.filter(hasDlMark).length, 1, "重装饰不得产生重复按钮");
 
-// (c) title 为空 → 回退 目录/文件名 span 重建
+// (c) contentId 指向相对路径且工作区根不可得 → 移除按钮（宁可没有，不下错文件）
+treeRoot.remove(); // 摘掉树根，workspaceRoot 只剩 sessions cwd（/ws）——仍存在，先覆盖另一种 null 形态
+// 直接构造一个「session contentId + 无根」的场景不易；改为验证 title 绝对回退 + null 移除两条
+previewRootB.setAttribute("data-textpreview-url", "dsh-resource://file/absolute//ws/docs/abs.md"); // absolute scope
+pathElB.setAttribute("title", "should-be-ignored");
+fireMutations();
+flushTimers();
+const dlB3 = headerB.children.find(hasDlMark);
+assert.ok(dlB3, "absolute contentId 必须可用");
+assert.equal(dlB3.getAttribute("data-dml-path"), "/ws/docs/abs.md", "absolute scope contentId 必须直接给绝对路径");
+previewRootB.remove();
+body.appendChild(treeRoot); // 还原树根供后续用例
+
+// (d) 无 contentId + title 非绝对 → 移除按钮（0.9.7 会留旧按钮 → 下错文件）
 const headerC = makeElement("div");
 headerC.className = "dhJKeW_header";
 const pathElC = makeElement("div");
 pathElC.setAttribute("data-textpreview-path", "");
-const dirSpanC = makeElement("span");
-dirSpanC.className = "x_pathDirectory";
-dirSpanC.textContent = "/ws/docs/";
-const nameSpanC = makeElement("span");
-nameSpanC.className = "x_pathName";
-nameSpanC.textContent = "readme.md";
-pathElC.appendChild(dirSpanC);
-pathElC.appendChild(nameSpanC);
+pathElC.setAttribute("title", "relative/only.txt"); // 相对、无 contentId、无 absolute
 const reloadC = makeElement("button");
 reloadC.setAttribute("data-textpreview-tool", "reload");
 headerC.appendChild(pathElC);
@@ -596,10 +625,16 @@ headerC.appendChild(reloadC);
 body.appendChild(headerC);
 fireMutations();
 flushTimers();
-const dlC = headerC.children.find(hasDlMark);
-assert.ok(dlC, "空 title 时也必须注入下载按钮");
-assert.equal(dlC.getAttribute("data-dml-path"), "/ws/docs/readme.md", "空 title 时必须回退 目录/文件名 重建绝对路径");
-headerB.remove();
+assert.ok(!headerC.querySelector("[data-dml-download]"), "定不出绝对路径时不得注入按钮");
+// 补：先有按钮、再变成定不出 → 必须移除
+pathElC.setAttribute("title", "/ws/has-abs.txt");
+fireMutations();
+flushTimers();
+assert.ok(headerC.querySelector("[data-dml-download]"), "title 绝对时必须注入按钮");
+pathElC.setAttribute("title", "relative/again.txt");
+fireMutations();
+flushTimers();
+assert.ok(!headerC.querySelector("[data-dml-download]"), "路径变为不可解析时必须移除按钮（防下载错文件）");
 headerC.remove();
 
 // ---------- 8. dispose 清理 ----------
@@ -607,7 +642,7 @@ for (const d of disposers.splice(0)) d();
 assert.ok(!header.children.includes(headerDl), "dispose 必须移除预览头下载按钮");
 assert.ok(observers.every((o) => o.disconnected), "dispose 必须断开全部 observer");
 assert.ok(!dirLi.classList.contains("dml-ul-host"), "dispose 必须回收 dml-ul-host 类");
-assert.ok(!dirLi.children.includes(ulBtn), "dispose 必须移除目录行上传按钮");
+assert.ok(!dirRowBtn.querySelector("[data-dml-upload]"), "dispose 必须移除目录行（行元素上的）上传按钮");
 assert.ok(!toolbar.children.includes(toolbarUl), "dispose 必须移除工具栏上传按钮");
 assert.ok(!body.querySelector("[data-dml-upload-input]"), "dispose 必须移除隐藏 file input");
 
