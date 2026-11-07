@@ -429,6 +429,28 @@ assert.ok(styleTags.length > 0, "apply 时必须注入样式");
 const cssText = styleTags.map((s) => s.textContent ?? "").join("\n");
 assert.ok(/_rightbarCol[^{}]*\{[^}]*backdrop-filter/.test(cssText), "透明修复：新右栏列必须带 backdrop-filter（玻璃模糊）");
 assert.ok(cssText.includes(".dml-dl"), "下载按钮样式必须在案");
+// 0.2.2 renamed the core backdrop to _drawerMask (stock z-index:70).
+// This stub does not implement CSS layout/hit testing: check the emitted rules,
+// then the unchanged core-owned click contract; real hit testing is browser-tested.
+const drawerRules = [...cssText.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+const maskRule = drawerRules.find(([, selector]) => selector.includes('_drawerMask'));
+const sidebarRule = drawerRules.find(([, selector, declarations]) =>
+	selector.includes('> [class*="_sidebarCol"]') && /z-index:/.test(declarations));
+assert.ok(maskRule && sidebarRule, "drawer mask and open sidebar rules must exist");
+assert.ok(maskRule[1].includes('_overlayLayer'), "legacy backdrop remains covered");
+assert.ok(maskRule[1].includes('data-dsh-mobile-layout-owner') && maskRule[1].includes(':not([data-sidebar-collapsed])'), "override stays scoped to owned open drawer");
+const zIndex = (rule) => Number(rule[2].match(/z-index:\s*(\d+)/)[1]);
+assert.ok(zIndex(maskRule) < zIndex(sidebarRule), "0.2.2 drawer mask must stay below clickable sidebar");
+assert.match(maskRule[2], /pointer-events:\s*auto/, "backdrop must still receive close clicks");
+assert.match(maskRule[2], /background:\s*rgb/, "backdrop retains visible dimming");
+const coreDrawerFixture = makeElement('div');
+const coreMaskFixture = makeElement('div');
+coreMaskFixture.className = '_drawerMask_fixture';
+coreDrawerFixture.appendChild(coreMaskFixture);
+coreMaskFixture.addEventListener('click', () => coreDrawerFixture.setAttribute('data-sidebar-collapsed', ''));
+assert.equal(coreDrawerFixture.hasAttribute('data-sidebar-collapsed'), false);
+coreMaskFixture.click();
+assert.equal(coreDrawerFixture.hasAttribute('data-sidebar-collapsed'), true, "core mask click contract still closes drawer");
 assert.ok(!slotInjects.some((s) => s.name === "conversation.view"), "「文件」页签（conversation.view slot）不得再注册");
 assert.equal(slotInjects.filter((s) => s.name === "sidebar.footer.action").length, 1, "侧栏动作 slot 保留（主题按钮）");
 assert.ok(effectLabels.some((l) => /built-in files panel download/.test(l)), "filesDownloadController 必须挂载");
