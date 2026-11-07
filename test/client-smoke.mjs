@@ -791,6 +791,49 @@ flushTimers();
 assert.ok(!headerC.querySelector("[data-dml-download]"), "路径变为不可解析时必须移除按钮（防下载错文件）");
 headerC.remove();
 
+// ---------- 7d. 跨会话相对预览：必须使用所属会话根，不能借当前文件树 ----------
+const crossRoot = makeElement("div");
+crossRoot.setAttribute("data-textpreview-url", "dsh-resource://file/session/other-session/docs/shared.txt");
+const crossHeader = makeElement("div");
+crossHeader.className = "x_header";
+const crossPath = makeElement("div");
+crossPath.setAttribute("data-textpreview-path", "");
+const crossReload = makeElement("button");
+crossReload.setAttribute("data-textpreview-tool", "reload");
+crossHeader.append(crossPath, crossReload);
+crossRoot.appendChild(crossHeader);
+body.appendChild(crossRoot);
+const originalSnapshot = sessionsService.list.getSnapshot;
+sessionsService.list.getSnapshot = () => ({ current: SESSION_ID, byId: {
+	[SESSION_ID]: { cwd: "/ws" }, "other-session": { cwd: "/other-workspace" }
+} });
+fireMutations();
+flushTimers();
+let crossDl = crossHeader.querySelector("[data-dml-download]");
+assert.equal(crossDl?.getAttribute("data-dml-path"), "/other-workspace/docs/shared.txt", "跨会话预览必须取所属会话 cwd，不得取当前树根");
+assert.equal(crossDl.getAttribute("data-dml-session"), "other-session");
+// 同绝对路径换所属会话：路径相同也必须更新 session 标记。
+crossRoot.setAttribute("data-textpreview-url", "dsh-resource://file/session/third-session//other-workspace/docs/shared.txt");
+fireMutations();
+flushTimers();
+crossDl = crossHeader.querySelector("[data-dml-download]");
+assert.equal(crossDl.getAttribute("data-dml-session"), "third-session", "同路径换会话不得保留旧 sessionId");
+crossDl.click();
+assert.equal(new URLSearchParams(xhrLog.at(-1).url.split("?")[1]).get("sessionId"), "third-session");
+// 所属会话根未知：不应猜当前根；绝对 title 仍可作为权威解析失败时的回退。
+crossRoot.setAttribute("data-textpreview-url", "dsh-resource://file/session/unknown-session/docs/shared.txt");
+fireMutations();
+flushTimers();
+assert.equal(crossHeader.querySelector("[data-dml-download]"), null, "未知所属会话根时不注入可能指错文件的按钮");
+// 畸形 URI 不得抛出并中止全部预览装饰。
+crossRoot.setAttribute("data-textpreview-url", "dsh-resource://file/session/other-session/bad%ZZ.txt");
+crossPath.setAttribute("title", "/other-workspace/fallback.txt");
+fireMutations();
+flushTimers();
+assert.equal(crossHeader.querySelector("[data-dml-download]")?.getAttribute("data-dml-path"), "/other-workspace/fallback.txt");
+sessionsService.list.getSnapshot = originalSnapshot;
+crossRoot.remove();
+
 // ---------- 8. dispose 清理 ----------
 for (const d of disposers.splice(0)) d();
 assert.ok(!header.children.includes(headerDl), "dispose 必须移除预览头下载按钮");
